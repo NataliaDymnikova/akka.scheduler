@@ -1,0 +1,165 @@
+ext.libraries = [
+        akka          : [
+                'com.typesafe.akka:akka-actor_2.11:2.4-M3',
+                'com.typesafe.akka:akka-cluster_2.11:2.4-M3',
+                'com.typesafe.akka:akka-slf4j_2.11:2.4-M3',
+        ],
+
+        rxjava : [
+                'io.reactivex:rxjava:1.1.0'
+        ],
+
+        streamex: [
+                'io.github.amaembo:streamex:0.3.8'
+        ],
+
+        protobuf       : [
+                'com.google.protobuf:protobuf-java:3.0.0-beta-1'
+        ],
+
+        spring_context : [
+                'org.springframework:spring-context:4.2.4.RELEASE',
+                'org.springframework:spring-beans:4.2.4.RELEASE'
+        ],
+
+        config         : [
+                'com.typesafe:config:1.3.0'
+        ],
+
+        log4j_core     : [
+                'org.apache.logging.log4j:log4j-api:2.3',
+                'org.apache.logging.log4j:log4j-core:2.3'
+        ],
+
+        logging_runtime: [
+                'org.slf4j:jcl-over-slf4j:1.7.12',
+                'org.apache.logging.log4j:log4j-slf4j-impl:2.3'
+        ],
+
+        guava          : [
+                'com.google.guava:guava:18.0',
+        ],
+
+        junit          : [
+                'junit:junit:4.11',
+                'org.mockito:mockito-core:2.0.31-beta',
+                'net.bytebuddy:byte-buddy:0.6.14',
+                'org.objenesis:objenesis:2.1',
+                'org.hamcrest:hamcrest-core:1.3',
+                'org.hamcrest:hamcrest-library:1.3',
+        ],
+
+        jimfs          : [
+                'com.google.jimfs:jimfs:1.0'
+        ],
+]
+
+
+allprojects {
+    group 'natalia.dymnikova'
+    version '1.0-SNAPSHOT'
+
+    apply plugin: 'java'
+
+    sourceCompatibility = 1.8
+
+    repositories {
+        mavenCentral()
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDirs 'src/spring/java'
+                srcDirs 'src/proto/java'
+            }
+            resources {
+                srcDirs 'src/spring/resources'
+                srcDirs 'src/proto/resources'
+            }
+        }
+    }
+
+    dependencies {
+        compile libraries.spring_context
+        testCompile project(':test')
+    }
+
+    test {
+        testLogging {
+            showStandardStreams = true
+        }
+    }
+}
+
+subprojects {
+    dependencies {
+        compile libraries.guava
+
+        compile libraries.logging_runtime
+    }
+}
+
+
+
+def collectProtoDirs(Project project, Set visitedProjects = new HashSet()) {
+    logger.info("Collecting proto dirs from project ${project}...")
+    return [
+            new File("${project.projectDir}/src/proto/resources"),
+            project.configurations.compile.allDependencies.findAll {
+                it instanceof ProjectDependency
+            }.collect {
+                logger.info("Processing dependency ${it} of project ${project}...")
+
+                def Project dependencyProject = it.dependencyProject;
+
+                if (visitedProjects.add(dependencyProject)) {
+                    return collectProtoDirs(dependencyProject, visitedProjects)
+                } else {
+                    return null;
+                }
+            }.flatten()
+    ].flatten().findAll { it != null  }
+}
+
+
+allprojects.findAll { Project proj ->
+    ((SourceSet) proj.sourceSets.main).resources.asFileTree.matching {
+        include "**/*.proto"
+    }.any()
+}.findAll {
+    !it.name.startsWith('3pp')
+}.each { Project proj ->
+    configure(proj) {
+        dependencies {
+            compile       libraries.protobuf
+        }
+
+        logger.info("  > Adding 'compileProto' taks into project ${proj}")
+
+        task compileProto(type:Exec) {
+            doFirst {
+
+                def java_out = project.sourceSets.main.java.srcDirs.find {
+                    it.parentFile.name == 'proto'
+                }
+
+                java_out.deleteDir()
+                java_out.mkdirs()
+
+                commandLine = [
+                        "protoc",
+                        "--java_out=${java_out}",
+                        collectProtoDirs(project).collect { "-I${it}" },
+                        sourceSets.main.resources.asFileTree.matching {
+                            include "**/*.proto"
+                        }.files.collect { it.canonicalPath }
+                ].flatten()
+
+                logger.info("  > commandLine: ${commandLine.join(' ')}")
+            }
+        }
+
+        compileJava.dependsOn compileProto
+    }
+}

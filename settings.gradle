@@ -1,0 +1,10 @@
+rootProject.name = 'akka.scheduler'
+
+include 'cluster-scheduler-integration-tests'
+include 'cluster-engine-basics'
+include 'cluster-scheduler-basics'
+include 'cluster-scheduler-akka'
+include 'common'
+include 'configuration'
+include 'test'
+

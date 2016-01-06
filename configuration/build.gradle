@@ -1,0 +1,15 @@
+dependencies {
+    compile libraries.spring_context
+    compile libraries.config
+
+    compile libraries.log4j_core
+    compile project(":common")
+}
+
+compileJava {
+    options.compilerArgs.addAll([
+        "-processor",
+        "org.apache.logging.log4j.core.config.plugins.processor.PluginProcessor"
+    ])
+}
+

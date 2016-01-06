@@ -1,0 +1,5 @@
+dependencies {
+    compile libraries.akka,
+            project(":cluster-scheduler-basics"),
+            project(":cluster-engine-basics")
+}

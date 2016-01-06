@@ -1,0 +1,7 @@
+dependencies {
+    compile libraries.rxjava
+    compile libraries.junit
+    compile libraries.jimfs
+    compile libraries.akka
+    compile project(":common")
+}
