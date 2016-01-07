@@ -18,8 +18,6 @@ package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.ActorPath;
 import akka.actor.ActorSelection;
-import akka.actor.AddressFromURIString;
-import natalia.dymnikova.cluster.ActorPaths;
 import natalia.dymnikova.cluster.ActorSystemAdapter;
 import natalia.dymnikova.cluster.scheduler.Remote;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
@@ -31,31 +29,26 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 import rx.Observable;
 import rx.Producer;
 import rx.Subscriber;
 
-import java.util.Collections;
 import java.util.NoSuchElementException;
 import java.util.function.Consumer;
 
-import static akka.actor.ActorPaths.fromString;
 import static akka.actor.AddressFromURIString.apply;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
 import static natalia.dymnikova.cluster.ActorPaths.computePool;
+import static natalia.dymnikova.cluster.scheduler.impl.MessagesHelper.flowMessage;
 import static natalia.dymnikova.util.MoreFutures.immediateFuture;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.isA;
 import static org.mockito.Matchers.same;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 import static rx.Observable.just;
 
 /**
@@ -73,8 +66,8 @@ public class AkkaBackedRemoteObservableTest {
     @Mock
     private ActorSystemAdapter adapter;
 
-    @Spy
-    private SetFlowBuilderFactory setFlowBuilderFactory = new SetFlowBuilderFactory();
+    @Mock
+    private SetFlowBuilderFactory setFlowBuilderFactory;
 
     private final RemoteSupplier<Observable<String>> stage0 = new RemoteSupplier<Observable<String>>() {
         @Override
@@ -109,6 +102,8 @@ public class AkkaBackedRemoteObservableTest {
         setupSelection(selection0, path0, RemoteSupplier.class);
         setupSelection(selection1, path1, RemoteOperator.class);
         setupSelection(selection9, path9, RemoteSubscriber.class);
+
+        doReturn(flowMessage()).when(setFlowBuilderFactory).makeFlow(anyString(), any());
 
         doReturn(new byte[0]).when(codec).pack(isA(Remote.class));
     }
@@ -155,6 +150,8 @@ public class AkkaBackedRemoteObservableTest {
         doReturn(immediateFuture(asList(
                 empty(), empty(), empty()
         ))).when(searcher).search(any());
+
+        doThrow(new NoSuchElementException("No candidate for stage...")).when(setFlowBuilderFactory).makeFlow(anyString(), any());
 
         @SuppressWarnings("unchecked")
         final Consumer<Throwable> throwableConsumer = mock(Consumer.class);

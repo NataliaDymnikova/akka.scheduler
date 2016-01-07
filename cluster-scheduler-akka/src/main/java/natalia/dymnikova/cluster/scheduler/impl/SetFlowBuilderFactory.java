@@ -16,40 +16,46 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
-import akka.actor.ActorSelection;
 import akka.actor.Address;
+import natalia.dymnikova.cluster.scheduler.SetFlowStrategy;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.StageContainer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
+import static java.util.stream.Collectors.toList;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
 import static natalia.dymnikova.util.MoreFutures.getUncheckedNow;
 
 /**
- * 
+ *
  */
 @Component
 public class SetFlowBuilderFactory {
+
+    @Autowired
+    private SetFlowStrategy strategy;
 
     public SetFlow makeFlow(final String flowName, final List<StageContainer> resolvedStages) {
         final SetFlow.Builder flow = SetFlow.newBuilder()
                 .setFlowName(flowName);
 
-        for (final StageContainer stageContainer : resolvedStages) {
-            final Optional<Address> first = getUncheckedNow(stageContainer.candidates)
-                    .stream()
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .findFirst();
+        final List<Optional<Address>> addresses = strategy.getNodes(resolvedStages.stream()
+                .map(stageContainer -> getUncheckedNow(stageContainer.candidates).stream()
+                        .filter(Optional::isPresent)
+                        .map(Optional::get).collect(toList()))
+                .collect(toList()));
 
-            first.map(address -> flow.addStages(Stage.newBuilder()
-                    .setOperator(stageContainer.remoteBytes)
-                    .setAddress(address.toString())
-                    .build())
+        for (int i = 0; i < addresses.size(); i++) {
+            final StageContainer stageContainer = resolvedStages.get(i);
+            addresses.get(i).map(address -> flow.addStages(Stage.newBuilder()
+                            .setOperator(stageContainer.remoteBytes)
+                            .setAddress(address.toString())
+                            .build())
             ).orElseThrow(() ->
                     new NoSuchElementException("No candidate for stage " + stageContainer.remote)
             );
