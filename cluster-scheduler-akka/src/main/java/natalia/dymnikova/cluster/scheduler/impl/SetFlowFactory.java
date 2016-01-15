@@ -17,7 +17,7 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
-import natalia.dymnikova.cluster.scheduler.SetFlowStrategy;
+import natalia.dymnikova.cluster.scheduler.GetAddressesStrategy;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.StageContainer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -35,27 +35,30 @@ import static natalia.dymnikova.util.MoreFutures.getUncheckedNow;
  *
  */
 @Component
-public class SetFlowBuilderFactory {
+public class SetFlowFactory {
 
     @Autowired
-    private SetFlowStrategy strategy;
+    private GetAddressStrategyFactory strategyFactory;
 
     public SetFlow makeFlow(final String flowName, final List<StageContainer> resolvedStages) {
+        final GetAddressesStrategy strategy = strategyFactory.getAddressStrategy();
         final SetFlow.Builder flow = SetFlow.newBuilder()
                 .setFlowName(flowName);
 
-        final List<Optional<Address>> addresses = strategy.getNodes(resolvedStages.stream()
-                .map(stageContainer -> getUncheckedNow(stageContainer.candidates).stream()
-                        .filter(Optional::isPresent)
-                        .map(Optional::get).collect(toList()))
-                .collect(toList()));
+        final List<Optional<Address>> addresses = strategy.getNodes(
+                resolvedStages.stream()
+                        .map(stageContainer -> getUncheckedNow(stageContainer.candidates).stream()
+                                .filter(Optional::isPresent)
+                                .map(Optional::get).collect(toList()))
+                        .collect(toList())
+        );
 
         for (int i = 0; i < addresses.size(); i++) {
             final StageContainer stageContainer = resolvedStages.get(i);
             addresses.get(i).map(address -> flow.addStages(Stage.newBuilder()
-                            .setOperator(stageContainer.remoteBytes)
-                            .setAddress(address.toString())
-                            .build())
+                    .setOperator(stageContainer.remoteBytes)
+                    .setAddress(address.toString())
+                    .build())
             ).orElseThrow(() ->
                     new NoSuchElementException("No candidate for stage " + stageContainer.remote)
             );

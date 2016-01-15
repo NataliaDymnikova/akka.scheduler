@@ -73,7 +73,7 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
     private ActorSystemAdapter adapter;
 
     @Autowired
-    private SetFlowBuilderFactory setFlowBuilderFactory;
+    private SetFlowFactory setFlowFactory;
 
     public AkkaBackedRemoteObservable(final String flowName) {
         this.flowName = flowName;
@@ -127,7 +127,7 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
         resolveCandidates().thenAccept(selections -> {
             log.debug("Resolved {} candidates for flow {}", selections.size(), flowName);
 
-            final SetFlow flow = setFlowBuilderFactory.makeFlow(
+            final SetFlow flow = setFlowFactory.makeFlow(
                     flowName, stages
             );
 

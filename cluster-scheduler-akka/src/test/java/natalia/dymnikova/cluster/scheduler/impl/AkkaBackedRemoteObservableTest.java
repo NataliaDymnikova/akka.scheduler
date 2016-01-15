@@ -67,7 +67,7 @@ public class AkkaBackedRemoteObservableTest {
     private ActorSystemAdapter adapter;
 
     @Mock
-    private SetFlowBuilderFactory setFlowBuilderFactory;
+    private SetFlowFactory setFlowFactory;
 
     private final RemoteSupplier<Observable<String>> stage0 = new RemoteSupplier<Observable<String>>() {
         @Override
@@ -103,7 +103,7 @@ public class AkkaBackedRemoteObservableTest {
         setupSelection(selection1, path1, RemoteOperator.class);
         setupSelection(selection9, path9, RemoteSubscriber.class);
 
-        doReturn(flowMessage()).when(setFlowBuilderFactory).makeFlow(anyString(), any());
+        doReturn(flowMessage()).when(setFlowFactory).makeFlow(anyString(), any());
 
         doReturn(new byte[0]).when(codec).pack(isA(Remote.class));
     }
@@ -151,7 +151,7 @@ public class AkkaBackedRemoteObservableTest {
                 empty(), empty(), empty()
         ))).when(searcher).search(any());
 
-        doThrow(new NoSuchElementException("No candidate for stage...")).when(setFlowBuilderFactory).makeFlow(anyString(), any());
+        doThrow(new NoSuchElementException("No candidate for stage...")).when(setFlowFactory).makeFlow(anyString(), any());
 
         @SuppressWarnings("unchecked")
         final Consumer<Throwable> throwableConsumer = mock(Consumer.class);
