@@ -44,15 +44,17 @@ public class AutostartActorsBeanPostProcessor {
     private SpringAkkaExtensionId.AkkaExtension extension;
 
     @EventListener(ContextStartedEvent.class)
-    public void onStart() {
-        StreamEx.<String>of(applicationContext.getBeanNamesForAnnotation(
-                AutostartActor.class
-        )).map(applicationContext::getType)
-                .filter(ActorLogic.class::isAssignableFrom)
-                .mapToEntry(type -> (Class<? extends ActorLogic>) type, type -> type.getAnnotation(AutostartActor.class))
-                .peek(e -> log.debug("Discovered autostart actor {}", e.getKey().getName()))
-                .mapToValue((type, annotation) -> annotation.value())
-                .mapToValue((type, path) -> actorSystem.actorOf(extension.props(type), path))
-                .forKeyValue((type, ref) -> log.info("Started actor {} of type {}", ref.path(), type.getName()));
+    public void onStart(final ContextStartedEvent event) {
+        if (event.getApplicationContext() == applicationContext) {
+            StreamEx.<String>of(applicationContext.getBeanNamesForAnnotation(
+                    AutostartActor.class
+            )).map(applicationContext::getType)
+                    .filter(ActorLogic.class::isAssignableFrom)
+                    .mapToEntry(type -> (Class<? extends ActorLogic>) type, type -> type.getAnnotation(AutostartActor.class))
+                    .peek(e -> log.debug("Discovered autostart actor {}", e.getKey().getName()))
+                    .mapToValue((type, annotation) -> annotation.value())
+                    .mapToValue((type, path) -> actorSystem.actorOf(extension.props(type), path))
+                    .forKeyValue((type, ref) -> log.info("Started actor {} of type {}", ref.path(), type.getName()));
+        }
     }
 }

@@ -23,6 +23,7 @@ import natalia.dymnikova.cluster.Actor;
 import natalia.dymnikova.cluster.ActorAdapter;
 import natalia.dymnikova.cluster.ActorLogic;
 import natalia.dymnikova.cluster.SpringAkkaExtensionId;
+import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.impl.SubscriberWithMore.HandleException;
 import natalia.dymnikova.util.AutowireHelper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,7 @@ import rx.Subscription;
 
 import java.io.Serializable;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Optional.empty;
@@ -40,9 +42,10 @@ import static natalia.dymnikova.cluster.scheduler.akka.Flow.More;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.OnStart;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.State;
+import static natalia.dymnikova.util.MoreByteStrings.wrap;
 
 /**
- * 
+ *
  */
 @Actor
 public class StartStageActor extends ActorLogic {
@@ -96,11 +99,41 @@ public class StartStageActor extends ActorLogic {
     }
 
     public void handle(final OnStart onStart) {
-        final Observable<Serializable> inObservable = autowireHelper.autowire(codec.unpackSupplier(
+        final Supplier<Observable<Serializable>> observableSupplier = autowireHelper.autowire(codec.unpackSupplier(
                 stage.getOperator().toByteArray()
-        )).get();
+        ));
 
-        outSubscriber = new SubscriberWithMore(this.nextActor, parent(), self(), codec, onStart.getCount());
+        final Observable<Serializable> inObservable;
+        final Object o = observableSupplier.get();
+
+        if (o instanceof Observable) {
+            inObservable = (Observable<Serializable>) o;
+        } else {
+            inObservable = Observable.just((Serializable) o);
+        }
+
+        outSubscriber = new SubscriberWithMore() {
+            @Override
+            public void onStart() {
+                request(onStart.getCount());
+            }
+
+            @Override
+            public void onCompleted() {
+                nextActor.tell(Flow.Completed.getDefaultInstance(), self());
+            }
+
+            @Override
+            public void onError(final Throwable e) {
+                self().tell(new HandleException(e), self());
+            }
+
+            @Override
+            public void onNext(final Serializable serializable) {
+                nextActor.tell(Flow.Data.newBuilder().setData(wrap(codec.packObject(serializable))).build(), self());
+            }
+        };
+
         subscription = of(inObservable.subscribe(outSubscriber));
     }
 

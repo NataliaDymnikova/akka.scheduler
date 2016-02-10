@@ -16,20 +16,20 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
+import com.google.protobuf.ByteString;
 import natalia.dymnikova.cluster.ActorAdapter;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteStageException;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.impl.SubscriberWithMore.HandleException;
 import natalia.dymnikova.test.TestActorRef;
-import natalia.dymnikova.util.AutowireHelper;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
-import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 import rx.Subscriber;
@@ -38,14 +38,12 @@ import scala.runtime.BoxedUnit;
 
 import java.io.Serializable;
 
-import static natalia.dymnikova.cluster.scheduler.impl.MessagesHelper.flowMessage;
-import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.remoteStageActorPath;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.isA;
 import static org.mockito.Matchers.same;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -53,38 +51,36 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 /**
- * 
+ *
  */
 @RunWith(MockitoJUnitRunner.class)
 public class IntermediateStageActorTest {
     private final Codec codec = spy(Codec.class);
-
-    private Subscriber<? super Serializable> inSubscriber;
-
-    @Spy
-    private final RemoteOperator<Serializable, Serializable> operator = new RemoteOperator<Serializable, Serializable>() {
+    private final SubscriberWithMore subscriberWithMore = new SubscriberWithMore() {
         @Override
-        public Subscriber<? super Serializable> call(final Subscriber<? super Serializable> out) {
-            return IntermediateStageActorTest.this.inSubscriber = spy(new Subscriber<Serializable>(out) {
-                @Override
-                public void onCompleted() {
-                    out.onCompleted();
-                }
+        public void onCompleted() {
+            thirdStage.tell(Flow.Completed.getDefaultInstance(), self);
+        }
 
-                @Override
-                public void onError(final Throwable e) {
-                    out.onError(e);
-                }
+        @Override
+        public void onError(final Throwable e) {
+            self.tell(new HandleException(e), self);
+        }
 
-                @Override
-                public void onNext(final Serializable serializable) {
-                    out.onNext(serializable);
-                }
-            });
+        @Override
+        public void onNext(final Serializable serializable) {
+            thirdStage.tell(Flow.Data.newBuilder().setData(wrap(codec.packObject("test"))).build(), self);
+        }
+
+        @Override
+        public void onStart() {
+            firstStage.tell(Flow.OnStart.getDefaultInstance(), self);
         }
     };
 
-    private final Flow.SetFlow flow = flowMessage((RemoteOperator<Serializable, Serializable>) subscriber -> null).toBuilder().build();
+    private Subscriber<? super Serializable> inSubscriber;
+
+    private final TestRemoteOperator operator = spy(new TestRemoteOperator());
 
     private final ActorAdapter adapter = mock(ActorAdapter.class);
 
@@ -92,11 +88,16 @@ public class IntermediateStageActorTest {
 
     private ActorSelection thirdStage = mock(ActorSelection.class);
 
-    @Mock
-    private AutowireHelper autowireHelper;
+    private OutSubscriberFactory outSubscriberFactory = mock(OutSubscriberFactory.class);
 
     @InjectMocks
-    private final IntermediateStageActor stageActor = new IntermediateStageActor(adapter, firstStage, thirdStage, flow, flow.getStages(1));
+    private final IntermediateStageActor stageActor = new IntermediateStageActor(
+            adapter,
+            firstStage,
+            thirdStage,
+            operator,
+            outSubscriberFactory
+    );
 
     @Spy
     private TestActorRef parent;
@@ -109,20 +110,11 @@ public class IntermediateStageActorTest {
 
     @Before
     public void setUp() throws Exception {
-        doAnswer(i -> i.getArguments()[0]).when(autowireHelper).autowire(any());
-
         doReturn(parent).when(adapter).parent();
         doReturn(self).when(adapter).self();
         doReturn(sender).when(adapter).sender();
 
-        doReturn(operator).when(codec).unpackOperator(any());
-
-        doReturn(firstStage).when(adapter).actorSelection(remoteStageActorPath(flow, 0));
-        doReturn(remoteStageActorPath(flow, 0)).when(firstStage).anchorPath();
-
-        doReturn(thirdStage).when(adapter).actorSelection(remoteStageActorPath(flow, 1));
-        doReturn(remoteStageActorPath(flow, 1)).when(thirdStage).anchorPath();
-
+        doReturn(subscriberWithMore).when(outSubscriberFactory).getOutSubscriber(any(), any(), any(), anyLong());
         stageActor.preStart();
     }
 
@@ -199,6 +191,39 @@ public class IntermediateStageActorTest {
     public void shouldCallOnErrorWhenErrorMessage() throws Exception {
         stageActor.handle(Flow.State.Error.getDefaultInstance());
         verify(inSubscriber).onError(isA(RemoteStageException.class));
+    }
 
+    @Test
+    public void shouldSetSelfIfOperatorIsSelfAware() throws Exception {
+        verify(operator).setSelf(same(self));
+    }
+
+    private class TestRemoteOperator implements RemoteOperator<Serializable, Serializable>, SelfAware {
+        private ActorRef self;
+
+        @Override
+        public Subscriber<? super Serializable> call(final Subscriber<? super Serializable> out) {
+            return IntermediateStageActorTest.this.inSubscriber = spy(new Subscriber<Serializable>(out) {
+                @Override
+                public void onCompleted() {
+                    out.onCompleted();
+                }
+
+                @Override
+                public void onError(final Throwable e) {
+                    out.onError(e);
+                }
+
+                @Override
+                public void onNext(final Serializable serializable) {
+                    out.onNext(serializable);
+                }
+            });
+        }
+
+        @Override
+        public void setSelf(final ActorRef self) {
+            this.self = self;
+        }
     }
 }

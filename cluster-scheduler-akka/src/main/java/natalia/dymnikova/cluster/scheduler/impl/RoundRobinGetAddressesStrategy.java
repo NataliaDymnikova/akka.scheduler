@@ -17,15 +17,18 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
-import natalia.dymnikova.cluster.scheduler.GetAddressesStrategy;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import static java.util.stream.Collectors.toList;
 
 /**
- * Created by Natalia on 13.01.2016.
+ *
  */
 
 @Component

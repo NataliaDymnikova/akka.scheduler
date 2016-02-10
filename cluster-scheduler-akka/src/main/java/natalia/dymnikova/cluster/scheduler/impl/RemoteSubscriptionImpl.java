@@ -18,8 +18,19 @@ package natalia.dymnikova.cluster.scheduler.impl;
 
 import natalia.dymnikova.cluster.scheduler.RemoteSubscription;
 
+import java.util.List;
+
 /**
- * 
+ *
  */
 public class RemoteSubscriptionImpl implements RemoteSubscription {
+    private final List<String> addresses;
+
+    public RemoteSubscriptionImpl(final List<String> addresses) {
+        this.addresses = addresses;
+    }
+
+    public List<String> getAddresses() {
+        return addresses;
+    }
 }

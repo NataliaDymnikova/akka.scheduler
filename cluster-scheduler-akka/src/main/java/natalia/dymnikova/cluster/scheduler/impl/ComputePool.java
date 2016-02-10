@@ -16,8 +16,6 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
-import akka.actor.ActorRef;
-import akka.actor.Terminated;
 import akka.japi.pf.ReceiveBuilder;
 import com.google.protobuf.ByteString;
 import natalia.dymnikova.cluster.Actor;
@@ -31,9 +29,7 @@ import natalia.dymnikova.cluster.scheduler.akka.Flow.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-
-import java.util.HashMap;
-import java.util.Map;
+import org.springframework.context.ApplicationContext;
 
 import static natalia.dymnikova.cluster.ActorPaths.COMPUTE_POOL;
 import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
@@ -42,7 +38,6 @@ import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
  * An actor which represents a pool of compute resources/slots which can be used to execute any random computations
  * TODO introduce a limit on free slots.
  * <p>
- * 
  */
 @Actor
 @AutostartActor(COMPUTE_POOL)
@@ -55,12 +50,16 @@ public class ComputePool extends ActorLogic {
     @Autowired
     private Codec codec;
 
+    @Autowired
+    private ApplicationContext context;
+
     public ComputePool(final ActorAdapter adapter) {
         super(adapter);
 
         receive(ReceiveBuilder
                 .match(CheckFlow.class, this::handle)
                 .match(SetFlow.class, this::handle)
+                .match(LocalSetFlow.class, this::handle)
                 .build()
         );
     }
@@ -75,15 +74,29 @@ public class ComputePool extends ActorLogic {
         }
     }
 
-    public void handle(final SetFlow setFlow) {
-        log.trace("Handing SetFlow: {}", lazyDebugString(setFlow));
+    public void handle(final SetFlow flow) {
+        log.trace("Handing SetFlow: {}", lazyDebugString(flow));
+        log.debug("Create BasicChildrenCreator");
 
-        actorOf(extension.props(FlowControlActor.class, setFlow), setFlow.getFlowName());
+        actorOf(extension.props(
+                FlowControlActor.class,
+                flow,
+                context.getBean(BasicChildrenCreater.class, flow)
+        ), flow.getFlowName());
+    }
+
+    private void handle(final LocalSetFlow flow) {
+        log.trace("Handing LocalSetFlow: {}", flow);
+        log.debug("Create LocalChildrenCreator");
+        actorOf(extension.props(
+                FlowControlActor.class,
+                flow.getFlow(),
+                context.getBean(LocalChildrenCreater.class, flow)
+        ), flow.getFlow().getFlowName());
     }
 
     private boolean check(final ByteString operator) {
-        return codec.unpackRemote(
-                operator.toByteArray()
-        ).getRunCriteria().check();
+        return codec.unpackAndAutowire(operator).getRunCriteria().check();
     }
+
 }

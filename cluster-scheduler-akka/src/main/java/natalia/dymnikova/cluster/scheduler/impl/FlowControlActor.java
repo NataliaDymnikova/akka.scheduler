@@ -19,7 +19,6 @@ package natalia.dymnikova.cluster.scheduler.impl;
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
 import akka.actor.OneForOneStrategy;
-import akka.actor.Props;
 import akka.actor.SupervisorStrategy;
 import akka.actor.Terminated;
 import akka.cluster.Cluster;
@@ -37,11 +36,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
 import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.remoteFlowControlActorPath;
-import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.remoteStageActorPath;
-import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.stageName;
 
 /**
  * An actor which represents a supervisor for allocated compute resource/slot. It responsibility is to allocate a slot
@@ -49,7 +47,6 @@ import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.stageName;
  * <p>
  * This actor can control several instances of compute slots belonging to same compute flow.
  * <p>
- * 
  */
 @Actor
 public class FlowControlActor extends ActorLogic {
@@ -64,9 +61,14 @@ public class FlowControlActor extends ActorLogic {
 
     SetFlow flow;
 
-    public FlowControlActor(final ActorAdapter adapter, final SetFlow flow) {
+    private Function<FlowControlActor, List<ActorRef>> childrenCreater;
+
+    public FlowControlActor(final ActorAdapter adapter,
+                            final SetFlow flow,
+                            final Function<FlowControlActor, List<ActorRef>> childrenCreater) {
         super(adapter);
         this.flow = flow;
+        this.childrenCreater = childrenCreater;
 
         receive(ReceiveBuilder
                 .match(State.Error.class, this::handle)
@@ -94,20 +96,9 @@ public class FlowControlActor extends ActorLogic {
 
         log.info("Starting {} at {}", flow.getFlowName(), selfAddress);
 
-        final List<Stage> stagesList = flow.getStagesList();
-        for (int i = 0, stagesListSize = stagesList.size(); i < stagesListSize; i++) {
-            final Stage stage = stagesList.get(i);
-
-            if (selfAddress.equals(stage.getAddress())) {
-                final ActorRef stageRef = actorOf(
-                        stageActorProps(flow, i), stageName(i)
-                );
-
-                watch(stageRef);
-
-                activeStages.add(stageRef);
-            }
-        }
+        childrenCreater.apply(this).stream()
+                .peek(this::watch)
+                .forEach(activeStages::add);
     }
 
     public void handle(final Terminated terminated) {
@@ -130,29 +121,6 @@ public class FlowControlActor extends ActorLogic {
         sendMessageToAll(error);
 
         activeStages.forEach(e -> e.tell(error, self()));
-    }
-
-    private Props stageActorProps(final SetFlow flow, final int number) {
-        // TODO unify how stage actors are created - final stage received no ActorSelection but calculates it on itself
-        if (number == 0) {
-            return StartStageActor.props(
-                    extension,
-                    actorSelection(remoteStageActorPath(flow, number + 1)),
-                    flow.getStages(number)
-            );
-        } else if (number == flow.getStagesCount() - 1) {
-            return FinalStageActor.props(
-                    extension, flow
-            );
-        } else {
-            return IntermediateStageActor.props(
-                    extension,
-                    actorSelection(remoteStageActorPath(flow, number - 1)),
-                    actorSelection(remoteStageActorPath(flow, number + 1)),
-                    flow,
-                    flow.getStages(number)
-            );
-        }
     }
 
     private void sendMessageToAll(final Message error) {

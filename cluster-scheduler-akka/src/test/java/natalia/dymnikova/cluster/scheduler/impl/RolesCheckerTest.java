@@ -16,9 +16,11 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+import akka.actor.ActorSystem;
 import natalia.dymnikova.cluster.scheduler.RemoteFunction;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorImpl;
+import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorWithFunction;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
@@ -30,7 +32,7 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.internal.util.collections.Sets.newSet;
 
 /**
- * 
+ *
  */
 public class RolesCheckerTest {
 
@@ -72,6 +74,25 @@ public class RolesCheckerTest {
         assertThat(
                 checker.check(operator, newSet("role1")),
                 is(false)
+        );
+    }
+
+    @Test
+    public void shouldReturnTrueForSystemBeans() throws Exception {
+        final RemoteOperator<String, String> operator = new RemoteOperator<String, String>() {
+
+            @Autowired
+            private ActorSystem dependency;
+
+            @Override
+            public Subscriber<? super String> call(final Subscriber<? super String> subscriber) {
+                return subscriber;
+            }
+        };
+
+        assertThat(
+                checker.check(operator, newSet("role1")),
+                is(true)
         );
     }
 
@@ -150,7 +171,7 @@ public class RolesCheckerTest {
 
     @Test
     public void shouldReturnTrueForFunctionWrappedIntoRemoteOperatorImpl() throws Exception {
-        final RemoteOperator<String, String> operator = new RemoteOperatorImpl<>(new RemoteFunction<String, String>() {
+        final RemoteOperator<String, String> operator = new RemoteOperatorWithFunction<>(new RemoteFunction<String, String>() {
             @Override
             public String apply(final String s) {
                 return s;
@@ -172,7 +193,7 @@ public class RolesCheckerTest {
 
     @Test
     public void shouldReturnFalseForFunctionWrappedIntoRemoteOperatorImpl() throws Exception {
-        final RemoteOperator<String, String> operator = new RemoteOperatorImpl<>(new RemoteFunction<String, String>() {
+        final RemoteOperator<String, String> operator = new RemoteOperatorWithFunction<>(new RemoteFunction<String, String>() {
             @Override
             public String apply(final String s) {
                 return s;
@@ -194,7 +215,7 @@ public class RolesCheckerTest {
 
     @Test
     public void shouldReturnTrueForOperatorWithOneRequirementOfInterfaceWithTwoImplWithProfileAndWithout() throws Exception {
-        final RemoteOperator<String, String> operator = new RemoteOperatorImpl<>(new RemoteFunction<String, String>() {
+        final RemoteOperator<String, String> operator = new RemoteOperatorWithFunction<>(new RemoteFunction<String, String>() {
             @Override
             public String apply(final String s) {
                 return s;
@@ -217,7 +238,7 @@ public class RolesCheckerTest {
     @Test
     public void shouldReturnFalseForOperatorWithOneRequirementOfInterfaceWithTwoImplWithProfileAndWithoutWithEmptyRolesSet()
             throws Exception {
-        final RemoteOperator<String, String> operator = new RemoteOperatorImpl<>(new RemoteFunction<String, String>() {
+        final RemoteOperator<String, String> operator = new RemoteOperatorWithFunction<>(new RemoteFunction<String, String>() {
             @Override
             public String apply(final String s) {
                 return s;
@@ -241,7 +262,7 @@ public class RolesCheckerTest {
     }
 
     @Profile("test")
-    public static class TestDependencyClass implements TestDependencyInterface{
+    public static class TestDependencyClass implements TestDependencyInterface {
     }
 
     @Profile("test2")

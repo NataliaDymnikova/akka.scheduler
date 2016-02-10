@@ -17,6 +17,8 @@
 package natalia.dymnikova.cluster.scheduler;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
@@ -26,14 +28,28 @@ public interface RemoteObservable<T extends Serializable> {
 
     <Out extends Serializable> RemoteObservable<Out> map(final RemoteOperator<T, Out> operator);
 
+    <Out extends Serializable> RemoteObservable<Out> map(final RemoteOperator<T, Out> operator,
+                                                         final InetSocketAddress address);
+
     <Out extends Serializable> RemoteObservable<Out> map(final RemoteFunction<T, Out> function);
 
-     /**
+    <Out extends Serializable> RemoteObservable<Out> map(final RemoteFunction<T, Out> function,
+                                                         final InetSocketAddress address);
+
+    /**
      * Submits steps to the cluster as well as subscriber instance. Node hosting a {@code subscriber} becomes a consumer of the processing results.
      *
      * @param subscriber - a an instance of {@link RemoteSubscriber}
-     * @param onError
      * @return an instance of {@link RemoteSubscription}
      */
-    RemoteSubscription subscribe(final RemoteSubscriber subscriber, final Consumer<Throwable> onError);
+    CompletableFuture<? extends RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber);
+
+    CompletableFuture<? extends RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber,
+                                                              final InetSocketAddress address);
+
+    CompletableFuture<? extends RemoteSubscription> subscribe(final Consumer<T> onNext,
+                                                              final Runnable onComplete,
+                                                              final Consumer<Throwable> onError);
+
+    CompletableFuture<? extends RemoteSubscription> subscribe();
 }

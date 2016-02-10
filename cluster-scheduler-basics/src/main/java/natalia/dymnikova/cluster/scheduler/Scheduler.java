@@ -19,9 +19,11 @@ package natalia.dymnikova.cluster.scheduler;
 import rx.Observable;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
+import java.util.List;
 
 /**
- * 
+ *
  */
 public interface Scheduler {
     default <T extends Serializable> RemoteObservable<T> empty() {
@@ -37,6 +39,9 @@ public interface Scheduler {
      */
     <T extends Serializable> RemoteObservable<T> createObservable(final RemoteSupplier<Observable<T>> supplier);
 
+    <T extends Serializable> RemoteObservable<T> createObservable(final RemoteSupplier<Observable<T>> supplier,
+                                                                  final InetSocketAddress address);
+
     /**
      * Creates {@code RemoteObservable} with single value returned by provided {@code supplier}
      *
@@ -45,4 +50,12 @@ public interface Scheduler {
      * @return an instance of {@code RemoteObservable}
      */
     <T extends Serializable> RemoteObservable<T> create(final RemoteSupplier<T> supplier);
+
+    <T extends Serializable> RemoteObservable<T> create(final RemoteSupplier<T> supplier,
+                                                        final InetSocketAddress address);
+
+    List<Member> getMembers();
+
+    List<Member> getMembersWithRoles(final String... roles);
+
 }

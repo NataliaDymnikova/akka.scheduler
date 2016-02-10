@@ -24,20 +24,14 @@ import natalia.dymnikova.cluster.ActorAdapter;
 import natalia.dymnikova.cluster.ActorLogic;
 import natalia.dymnikova.cluster.SpringAkkaExtensionId.AkkaExtension;
 import natalia.dymnikova.cluster.scheduler.RemoteStageException;
-import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.Completed;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.Data;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.IsReady;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.More;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.OnStart;
-import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
-import natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.State;
-import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorImpl;
 import natalia.dymnikova.cluster.scheduler.impl.SubscriberWithMore.HandleException;
-import natalia.dymnikova.util.AutowireHelper;
 import org.springframework.beans.factory.annotation.Autowired;
-import rx.Observable;
 import rx.Observable.Operator;
 import rx.Producer;
 import rx.Subscriber;
@@ -45,7 +39,7 @@ import rx.Subscriber;
 import java.io.Serializable;
 
 /**
- * 
+ *
  */
 @Actor
 public class IntermediateStageActor extends ActorLogic {
@@ -53,54 +47,49 @@ public class IntermediateStageActor extends ActorLogic {
     @Autowired
     private Codec codec;
 
-    @Autowired
-    private SubscribeFactory sFactory;
-
-    @Autowired
-    private AutowireHelper autowireHelper;
 
     final private ActorSelection nextActor;
     final private ActorSelection prevActor;
-    private Stage stage;
+    private final Operator<Serializable, Serializable> operator;
+    private final OutSubscriberFactory outSubscriberFactory;
 
     private Subscriber<? super Serializable> inSubscriber;
 
     private SubscriberWithMore outSubscriber;
 
-    private final SetFlow flow;
-
     public static Props props(final AkkaExtension extension,
                               final ActorSelection prevActor,
                               final ActorSelection nextActor,
-                              final SetFlow flow,
-                              final Stage stage) {
+                              final Operator<Serializable, Serializable> operator,
+                              final OutSubscriberFactory outSubscriberFactory) {
         return extension.props(
                 IntermediateStageActor.class,
                 prevActor,
                 nextActor,
-                flow,
-                stage
+                operator,
+                outSubscriberFactory
         );
     }
 
     public IntermediateStageActor(final ActorAdapter adapter,
                                   final ActorSelection prevActor,
                                   final ActorSelection nextActor,
-                                  final SetFlow flow,
-                                  final Stage stage) {
+                                  final Operator<Serializable, Serializable> operator,
+                                  final OutSubscriberFactory outSubscriberFactory) {
         super(adapter);
 
         this.nextActor = nextActor;
         this.prevActor = prevActor;
-        this.stage = stage;
+        this.operator = operator;
+        this.outSubscriberFactory = outSubscriberFactory;
 
         receive(new ReceiveAdapter(ReceiveBuilder
+                .match(IsReady.class, this::handle)
+                .match(OnStart.class, this::handle)
                 .match(Data.class, this::handle)
                 .match(Completed.class, this::handle)
                 .match(More.class, this::handle)
                 .match(HandleException.class, this::handle)
-                .match(IsReady.class, this::handle)
-                .match(OnStart.class, this::handle)
                 .build(),
                 t -> {
                     if (!(t instanceof HandleException)) {
@@ -108,8 +97,6 @@ public class IntermediateStageActor extends ActorLogic {
                     }
                 }
         ));
-
-        this.flow = flow;
     }
 
     public void handle(final HandleException e) {
@@ -118,28 +105,15 @@ public class IntermediateStageActor extends ActorLogic {
 
     @Override
     public void preStart() throws Exception {
-        outSubscriber = new SubscriberWithMore(
-                nextActor, parent(), self(), codec, 0
-        ) {
-            @Override
-            public void onStart() {
-            }
-        };
+        outSubscriber = outSubscriberFactory.getOutSubscriber(nextActor, parent(), self(), 0);
 
-        inSubscriber = unpackOperator().call(outSubscriber);
-    }
-
-    private Operator<Serializable, Serializable> unpackOperator() {
-        final Operator<Serializable, Serializable> operator = codec.unpackOperator(
-                stage.getOperator().toByteArray()
-        );
-
-        if (operator instanceof RemoteOperatorImpl) {
-            return new RemoteOperatorImpl<>(autowireHelper.autowire(((RemoteOperatorImpl) operator).delegate));
-        } else {
-            return autowireHelper.autowire(operator);
+        if (operator instanceof SelfAware) {
+            ((SelfAware) operator).setSelf(self());
         }
+
+        inSubscriber = operator.call(outSubscriber);
     }
+
 
     public void handle(final OnStart onStart) {
 

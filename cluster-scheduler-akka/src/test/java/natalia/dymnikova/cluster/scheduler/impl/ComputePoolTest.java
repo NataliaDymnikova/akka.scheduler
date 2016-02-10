@@ -24,6 +24,7 @@ import natalia.dymnikova.cluster.scheduler.RunCriteria;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.State;
 import natalia.dymnikova.test.TestActorProps;
 import natalia.dymnikova.test.TestActorRef;
+import natalia.dymnikova.util.AutowireHelper;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -31,6 +32,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import rx.Subscriber;
 
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
@@ -40,7 +43,9 @@ import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Matchers.isA;
 import static org.mockito.Matchers.same;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
@@ -53,8 +58,11 @@ public class ComputePoolTest {
     @Mock
     protected AkkaExtension extension;
 
-    @Spy
-    protected Codec codec;
+    @Mock
+    private AutowireHelper autowireHelper;
+
+    @InjectMocks
+    protected Codec codec = spy(Codec.class);
 
     private ActorAdapter adapter = spy(ActorAdapter.class);
 
@@ -70,6 +78,9 @@ public class ComputePoolTest {
     @Spy
     private TestActorRef flowControlActorPropsRef;
 
+    @Mock
+    private ApplicationContext context;
+
     private Props flowControlActorProps = TestActorProps.props();
 
     @Before
@@ -77,10 +88,14 @@ public class ComputePoolTest {
         doReturn(sender).when(adapter).sender();
         doReturn(self).when(adapter).self();
 
-        doReturn(flowControlActorProps).when(extension).props(same(FlowControlActor.class), isA(SetFlow.class));
+        doReturn(mock(BasicChildrenCreater.class)).when(context).getBean(same(BasicChildrenCreater.class), isA(SetFlow.class));
+
+        doReturn(flowControlActorProps).when(extension).props(same(FlowControlActor.class), isA(SetFlow.class), isA(BasicChildrenCreater.class));
         doReturn(flowControlActorPropsRef).when(adapter).actorOf(
                 same(flowControlActorProps), any()
         );
+
+        doAnswer(invocation -> invocation.getArguments()[0]).when(autowireHelper).autowire(any());
     }
 
     @Test

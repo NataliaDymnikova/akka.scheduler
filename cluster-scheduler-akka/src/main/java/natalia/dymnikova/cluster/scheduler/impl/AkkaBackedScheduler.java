@@ -16,25 +16,38 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+import akka.cluster.Cluster;
+import natalia.dymnikova.cluster.scheduler.Member;
 import natalia.dymnikova.cluster.scheduler.RemoteObservable;
 import natalia.dymnikova.cluster.scheduler.RemoteSupplier;
 import natalia.dymnikova.cluster.scheduler.Scheduler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import rx.Observable;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.UUID;
 
+import static java.util.Arrays.asList;
+import static java.util.stream.Collectors.toList;
+import static scala.collection.JavaConversions.asJavaCollection;
+
 /**
- * 
+ *
  */
+@Lazy
 @Component
 public class AkkaBackedScheduler implements Scheduler {
 
     @Autowired
     private ApplicationContext context;
+
+    @Autowired
+    private Cluster cluster;
 
     @Override
     public <T extends Serializable> RemoteObservable<T> createObservable(final RemoteSupplier<Observable<T>> supplier) {
@@ -45,10 +58,41 @@ public class AkkaBackedScheduler implements Scheduler {
     }
 
     @Override
+    public <T extends Serializable> RemoteObservable<T> createObservable(final RemoteSupplier<Observable<T>> supplier, final InetSocketAddress address) {
+        @SuppressWarnings("unchecked")
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
+
+        return bean.withSupplierOfObservable(supplier, address);
+    }
+
+    @Override
     public <T extends Serializable> RemoteObservable<T> create(final RemoteSupplier<T> supplier) {
         @SuppressWarnings("unchecked")
         final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
 
         return bean.withSupplier(supplier);
+    }
+
+    @Override
+    public <T extends Serializable> RemoteObservable<T> create(final RemoteSupplier<T> supplier, final InetSocketAddress address) {
+        @SuppressWarnings("unchecked")
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
+
+        return bean.withSupplier(supplier, address);
+    }
+
+    @Override
+    public List<Member> getMembers() {
+        return asJavaCollection(cluster.readView().members()).stream()
+                .map(AkkaMember::new)
+                .collect(toList());
+    }
+
+    @Override
+    public List<Member> getMembersWithRoles(final String... roles) {
+        return asJavaCollection(cluster.readView().members()).stream()
+                .filter(member -> member.getRoles().containsAll(asList(roles)))
+                .map(AkkaMember::new)
+                .collect(toList());
     }
 }

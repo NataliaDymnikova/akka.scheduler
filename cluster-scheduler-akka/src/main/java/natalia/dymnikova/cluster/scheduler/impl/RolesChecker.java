@@ -22,6 +22,7 @@ import natalia.dymnikova.configuration.ConfigValue;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.annotation.ScannedGenericBeanDefinition;
 import org.springframework.core.env.StandardEnvironment;
@@ -46,6 +47,7 @@ import static java.util.stream.Collectors.toSet;
 /**
  *
  */
+@Lazy
 @Component
 public class RolesChecker {
 
@@ -68,6 +70,8 @@ public class RolesChecker {
         final Field[] declaredFields = aClass.getDeclaredFields();
         final List<TypeFilter> fields = Arrays.stream(declaredFields)
                 .filter(field -> field.isAnnotationPresent(Autowired.class))
+                // TODO deal with 3pp dependencies
+                .filter(field -> field.getType().getPackage().getName().startsWith(basePackage))
                 .map(Field::getType)
                 .map(AssignableTypeFilter::new)
                 .collect(toList());

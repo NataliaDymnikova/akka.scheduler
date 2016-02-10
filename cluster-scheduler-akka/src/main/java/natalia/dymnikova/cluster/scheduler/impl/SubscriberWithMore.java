@@ -16,60 +16,16 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
-import akka.actor.ActorRef;
-import akka.actor.ActorSelection;
-import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import rx.Subscriber;
 
 import java.io.Serializable;
 
-import static natalia.dymnikova.util.MoreByteStrings.wrap;
-
 /**
- * 
+ *
  */
-public class SubscriberWithMore extends Subscriber<Serializable> {
-
-    final private ActorSelection nextActor;
-    final private ActorRef parent;
-    final private ActorRef self;
-    final private Codec codec;
-    private long onStartCount;
-
-    public SubscriberWithMore(final ActorSelection nextActor,
-                              final ActorRef parent,
-                              final ActorRef self,
-                              final Codec codec,
-                              final long onStartCount) {
-        this.nextActor = nextActor;
-        this.parent = parent;
-        this.self = self;
-        this.codec = codec;
-        this.onStartCount = onStartCount;
-    }
-
-    @Override
-    public void onStart() {
-        request(onStartCount);
-    }
-
+public abstract class SubscriberWithMore extends Subscriber<Serializable> {
     public void more(final long n) {
         request(n);
-    }
-
-    @Override
-    public void onCompleted() {
-        nextActor.tell(Flow.Completed.getDefaultInstance(), self);
-    }
-
-    @Override
-    public void onError(final Throwable e) {
-        self.tell(new HandleException(e), self);
-    }
-
-    @Override
-    public void onNext(final Serializable serializable) {
-        nextActor.tell(Flow.Data.newBuilder().setData(wrap(codec.packObject(serializable))).build(), self);
     }
 
     public static class HandleException extends RuntimeException {

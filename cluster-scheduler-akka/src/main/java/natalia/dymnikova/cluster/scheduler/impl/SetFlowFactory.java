@@ -17,7 +17,6 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
-import natalia.dymnikova.cluster.scheduler.GetAddressesStrategy;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.StageContainer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -58,6 +57,7 @@ public class SetFlowFactory {
             addresses.get(i).map(address -> flow.addStages(Stage.newBuilder()
                     .setOperator(stageContainer.remoteBytes)
                     .setAddress(address.toString())
+                    .setType(stageContainer.stageType)
                     .build())
             ).orElseThrow(() ->
                     new NoSuchElementException("No candidate for stage " + stageContainer.remote)

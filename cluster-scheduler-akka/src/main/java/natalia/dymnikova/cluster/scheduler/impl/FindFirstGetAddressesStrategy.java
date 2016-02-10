@@ -16,8 +16,11 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+/**
+ *
+ */
+
 import akka.actor.Address;
-import natalia.dymnikova.cluster.scheduler.GetAddressesStrategy;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

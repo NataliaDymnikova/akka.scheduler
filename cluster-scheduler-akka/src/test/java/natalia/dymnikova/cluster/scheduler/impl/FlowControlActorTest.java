@@ -16,6 +16,7 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
 import akka.actor.Props;
 import akka.actor.SupervisorStrategy.Directive;
@@ -33,6 +34,10 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 import scala.PartialFunction;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 
 import static akka.actor.AddressFromURIString.parse;
 import static natalia.dymnikova.cluster.scheduler.impl.MessagesHelper.Host1;
@@ -53,7 +58,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyZeroInteractions;
 
 /**
- * 
+ *
  */
 @RunWith(MockitoJUnitRunner.class)
 public class FlowControlActorTest {
@@ -72,8 +77,10 @@ public class FlowControlActorTest {
     private ActorSelection selection1 = givenRemoteFlowControlActorSelection(flow, 1);
     private ActorSelection selection2 = givenRemoteFlowControlActorSelection(flow, 2);
 
+    private Function<FlowControlActor, List<ActorRef>> childrenCreater = mock(Function.class);
+
     @InjectMocks
-    private FlowControlActor flowControlActor = new FlowControlActor(adapter, flow);
+    private FlowControlActor flowControlActor = new FlowControlActor(adapter, flow, childrenCreater);
 
     @Spy
     private TestActorRef stage;
@@ -81,45 +88,30 @@ public class FlowControlActorTest {
     @Spy
     private TestActorRef self;
 
+    @Mock
+    private ActorRef startingJobActor;
+
     private Props stageActorProps = props();
 
     @Before
     public void setUp() throws Exception {
+        doReturn(new ArrayList<>()).when(childrenCreater).apply(flowControlActor);
+
         doReturn(parse(Host1)).when(cluster).selfAddress();
 
         doReturn(stageActorProps).when(extension).props(same(IntermediateStageActor.class), any(), any(), any(), any());
-        doReturn(stageActorProps).when(extension).props(same(FinalStageActor.class), any());
+        doReturn(stageActorProps).when(extension).props(same(StartingJobActor.class), any());
 
         doReturn(stage).when(adapter).actorOf(stageActorProps, StageActorName0);
         doReturn(stage).when(adapter).actorOf(stageActorProps, StageActorName1);
         doReturn(stage).when(adapter).actorOf(stageActorProps, StageActorName2);
+        doReturn(startingJobActor).when(adapter).actorOf(stageActorProps);
 
         doReturn(selection0).when(adapter).actorSelection(remoteFlowControlActorPath(flow, 0));
         doReturn(selection1).when(adapter).actorSelection(remoteFlowControlActorPath(flow, 1));
         doReturn(selection2).when(adapter).actorSelection(remoteFlowControlActorPath(flow, 2));
 
         doReturn(self).when(adapter).self();
-    }
-
-    @Test
-    public void shouldStartStageActorWhenFlowReceived() throws Exception {
-        flowControlActor.preStart();
-
-        verify(adapter).actorOf(stageActorProps, StageActorName1);
-    }
-
-    @Test
-    public void shouldStartSecondStageActorWhenFlowWithOtherNumberIsReceived() throws Exception {
-        final SetFlow.Builder builder = this.flow.toBuilder();
-        builder.getStagesBuilderList()
-                .get(this.flow.getStagesCount() - 1)
-                .setAddress(flow.getStages(this.flow.getStagesCount() - 2).getAddress());
-
-        flowControlActor.flow = builder.build();
-
-        flowControlActor.preStart();
-
-        verify(adapter).actorOf(stageActorProps, StageActorName2);
     }
 
     @Test
@@ -173,7 +165,6 @@ public class FlowControlActorTest {
         verify(adapter, never()).stop(self);
     }
 
-
     public ActorSelection givenRemoteFlowControlActorSelection(final SetFlow flow, final int stageIndex) {
         final ActorSelection selection1 = mock(ActorSelection.class);
         doReturn(selection1).when(adapter).actorSelection(
@@ -187,6 +178,5 @@ public class FlowControlActorTest {
             super(expected);
         }
     }
-
 
 }

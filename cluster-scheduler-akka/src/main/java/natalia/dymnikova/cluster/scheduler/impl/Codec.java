@@ -16,12 +16,18 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+import com.google.protobuf.ByteString;
 import natalia.dymnikova.cluster.scheduler.Remote;
 import natalia.dymnikova.cluster.scheduler.RemoteFunction;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteSubscriber;
 import natalia.dymnikova.cluster.scheduler.RemoteSupplier;
+import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorImpl;
+import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorWithFunction;
+import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorWithSubscriber;
+import natalia.dymnikova.util.AutowireHelper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import rx.Observable;
 import rx.Observable.Operator;
@@ -40,6 +46,9 @@ import static natalia.dymnikova.util.MoreThrowables.unchecked;
  */
 @Component
 public class Codec {
+
+    @Autowired
+    private AutowireHelper autowireHelper;
 
     public <T extends Serializable> byte[] pack(final RemoteSupplier<T> f) {
         return pack((Remote) f);
@@ -83,6 +92,18 @@ public class Codec {
 
     public Remote unpackRemote(final byte[] b) {
         return (Remote) unpack(b);
+    }
+
+    public Remote unpackAndAutowire(final ByteString operatorBytes) {
+        final Remote operator = unpackRemote(operatorBytes.toByteArray());
+
+        if (operator instanceof RemoteOperatorWithFunction) {
+            return new RemoteOperatorWithFunction<>(autowireHelper.autowire(((RemoteOperatorWithFunction) operator).delegate));
+        } else if (operator instanceof RemoteOperatorWithSubscriber) {
+            return new RemoteOperatorWithSubscriber<>(autowireHelper.autowire(((RemoteOperatorWithSubscriber) operator).delegate));
+        } else {
+            return autowireHelper.autowire(operator);
+        }
     }
 
     public byte[] packObject(final Object funct) {

@@ -16,18 +16,18 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
-import akka.actor.ActorPath;
-import akka.actor.ActorSelection;
 import akka.actor.Address;
 import akka.cluster.Cluster;
 import akka.cluster.Member;
 import akka.util.Timeout;
-import natalia.dymnikova.cluster.ActorPaths;
 import natalia.dymnikova.cluster.ActorSystemAdapter;
 import natalia.dymnikova.cluster.scheduler.Remote;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.CheckFlow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import scala.collection.JavaConversions;
 import scala.concurrent.duration.Duration;
@@ -45,10 +45,13 @@ import static natalia.dymnikova.util.MoreFutures.allOf;
 import static natalia.dymnikova.util.MoreFutures.immediateFailedFuture;
 
 /**
- * 
+ *
  */
+@Lazy
 @Component
 public class NodeSearcher {
+
+    private static final Logger log = LoggerFactory.getLogger(NodeSearcher.class);
 
     @Autowired
     private Cluster cluster;
@@ -87,9 +90,10 @@ public class NodeSearcher {
                                 return Optional.empty();
                             }
                         })
-                        .exceptionally(t ->
-                                Optional.empty()
-                        )
+                        .exceptionally(t -> {
+                            log.error(t.getMessage(), t);
+                            return Optional.empty();
+                        })
                 ).toArray(CompletableFuture[]::new);
 
         return allOf(futures);

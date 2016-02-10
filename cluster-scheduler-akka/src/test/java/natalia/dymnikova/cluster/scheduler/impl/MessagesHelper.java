@@ -21,6 +21,8 @@ import com.google.protobuf.ByteString;
 import natalia.dymnikova.cluster.ActorPaths;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteSubscriber;
+import natalia.dymnikova.cluster.scheduler.akka.Flow;
+import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorWithSubscriber;
 import rx.Producer;
 
 import java.io.Serializable;
@@ -30,11 +32,13 @@ import static java.util.Arrays.asList;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.CheckFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Operator;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Supplier;
 import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.stageName;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 
 /**
- * 
+ *
  */
 public class MessagesHelper {
 
@@ -51,30 +55,33 @@ public class MessagesHelper {
     public static final String Host2 = "akka://system@host2:0";
 
     public static SetFlow flowMessage() {
-        return flowMessage((RemoteOperator<String, String>) (subscriber) -> subscriber);
+        return flowMessage((RemoteOperator<String, String>) subscriber -> subscriber);
     }
 
     public static SetFlow flowMessage(final RemoteOperator<? extends Serializable,? extends Serializable> operator) {
-        return flowMessage(operator, new RemoteSubscriberImpl());
+        return flowMessage(operator, new RemoteOperatorWithSubscriber<>(new RemoteSubscriberImpl()));
     }
 
     public static SetFlow flowMessage(final RemoteSubscriber subscriber) {
-        return flowMessage(s -> s, new RemoteSubscriberImpl());
+        return flowMessage(s -> s, new RemoteOperatorWithSubscriber<>(new RemoteSubscriberImpl()));
     }
 
-    public static SetFlow flowMessage(final RemoteOperator<?,?> operator, final RemoteSubscriber<?> subscriber) {
+    public static SetFlow flowMessage(final RemoteOperator<?,?> operator, final RemoteOperator<?, ?> subscriber) {
         return SetFlow.newBuilder()
                 .setFlowName(FlowName)
                 .addAllStages(asList(
                         Stage.newBuilder()
                                 .setAddress(Host0)
-                                .setOperator(ByteString.EMPTY).build(),
+                                .setOperator(ByteString.EMPTY)
+                                .setType(Supplier).build(),
                         Stage.newBuilder()
                                 .setAddress(Host1)
-                                .setOperator(wrap(codec.pack(operator))).build(),
+                                .setOperator(wrap(codec.pack(operator)))
+                                .setType(Operator).build(),
                         Stage.newBuilder()
                                 .setAddress(Host2)
-                                .setOperator(wrap(codec.pack(subscriber))).build()
+                                .setOperator(wrap(codec.pack(subscriber)))
+                                .setType(Operator).build()
                 ))
                 .build();
     }

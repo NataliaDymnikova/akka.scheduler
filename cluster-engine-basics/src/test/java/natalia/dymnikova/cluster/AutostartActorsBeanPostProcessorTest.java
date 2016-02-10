@@ -27,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.event.ContextStartedEvent;
 
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.isA;
@@ -66,7 +67,7 @@ public class AutostartActorsBeanPostProcessorTest {
 
         doAnswer(invocation -> mock(ActorRef.class)).when(actorSystem).actorOf(isA(Props.class), anyString());
 
-        processor.onStart();
+        processor.onStart(new ContextStartedEvent(applicationContext));
 
         verify(actorSystem).actorOf(isA(Props.class), eq("path1"));
         verify(actorSystem).actorOf(isA(Props.class), eq("path2"));
