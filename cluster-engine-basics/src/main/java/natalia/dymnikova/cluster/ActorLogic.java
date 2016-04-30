@@ -16,16 +16,19 @@
 
 package natalia.dymnikova.cluster;
 
-import akka.actor.*;
+import akka.actor.AbstractActor;
+import akka.actor.ActorPath;
+import akka.actor.ActorRef;
+import akka.actor.ActorSelection;
+import akka.actor.Props;
+import akka.actor.SupervisorStrategy;
 import akka.util.Timeout;
 import com.google.protobuf.Message;
-import com.google.protobuf.TextFormat;
+import com.typesafe.config.ConfigMemorySize;
 import natalia.dymnikova.cluster.SpringAkkaExtensionId.AkkaExtension;
-import natalia.dymnikova.util.MoreLogging;
+import natalia.dymnikova.configuration.ConfigValue;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import scala.Function1;
 import scala.Option;
 import scala.PartialFunction;
 import scala.concurrent.Future;
@@ -33,10 +36,12 @@ import scala.runtime.AbstractPartialFunction;
 import scala.runtime.BoxedUnit;
 
 import java.io.Serializable;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import static com.google.protobuf.TextFormat.shortDebugString;
-import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
+import static humanize.Humanize.binaryPrefix;
+import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Base class to encapsulate actor logic. Will be used to stuff an instance of {@link AbstractActor} with behaviour.
@@ -45,10 +50,13 @@ import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
  * {@link AbstractActor} are not testable with simple unit test
  */
 public class ActorLogic implements ActorAdapter {
-    private static final Logger log = LoggerFactory.getLogger(ActorLogic.class);
+    private final Logger log = getLogger(getClass());
 
     @Autowired
     protected AkkaExtension extension;
+
+    @ConfigValue("natalia-dymnikova.debug.max-message-size-for-logging")
+    private ConfigMemorySize maxLoggingSize;
 
     private ActorAdapter adapter;
 
@@ -61,8 +69,8 @@ public class ActorLogic implements ActorAdapter {
         adapter.receive(new AbstractPartialFunction<Object, BoxedUnit>() {
             @Override
             public BoxedUnit apply(final Object x) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Received message {} from {} to {}", logMessage(x), sender(), self());
+                if (log.isTraceEnabled()) {
+                    log.trace("Received message {} from {} to {}", logMessage(x), sender(), self());
                 }
 
                 try {
@@ -82,10 +90,15 @@ public class ActorLogic implements ActorAdapter {
                 }
             }
 
-            private Object logMessage(Object x) {
+            private Object logMessage(final Object x) {
                 final Object msg;
                 if (x instanceof Message) {
-                    msg = x.getClass().getName() + ": " + "{" + shortDebugString((Message) x) + "}";
+                    final int size = ((Message) x).getSerializedSize();
+                    if (size < maxLoggingSize.toBytes()) {
+                        msg = x.getClass().getName() + ": " + "{" + shortDebugString((Message) x) + "}";
+                    } else {
+                        msg = x.getClass().getName() + ": " + "{too big message for logging " + binaryPrefix(size) + "}";
+                    }
                 } else {
                     msg = x;
                 }
@@ -106,8 +119,23 @@ public class ActorLogic implements ActorAdapter {
     }
 
     @Override
+    public void forward(final ActorSelection selection, final Object msg) {
+        adapter.forward(selection, msg);
+    }
+
+    @Override
     public ActorRef actorOf(final Props props) {
         return adapter.actorOf(props);
+    }
+
+    @Override
+    public Optional<ActorRef> child(final String name) {
+        return adapter.child(name);
+    }
+
+    @Override
+    public Iterable<ActorRef> children() {
+        return adapter.children();
     }
 
     @Override
@@ -121,7 +149,7 @@ public class ActorLogic implements ActorAdapter {
     }
 
     @Override
-    public Scheduler scheduler() {
+    public SchedulerService scheduler() {
         return adapter.scheduler();
     }
 
@@ -156,8 +184,8 @@ public class ActorLogic implements ActorAdapter {
     }
 
     @Override
-    public void watch(final ActorRef actorRef) {
-        adapter.watch(actorRef);
+    public ActorRef watch(final ActorRef actorRef) {
+        return adapter.watch(actorRef);
     }
 
     @Override

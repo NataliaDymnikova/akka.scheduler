@@ -16,22 +16,21 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
-import akka.actor.ActorPath;
-import com.google.protobuf.ByteString;
-import natalia.dymnikova.cluster.ActorPaths;
+import natalia.dymnikova.cluster.scheduler.RemoteMergeOperatorImpl;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteSubscriber;
-import natalia.dymnikova.cluster.scheduler.akka.Flow;
+import natalia.dymnikova.cluster.scheduler.RemoteSupplier;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorWithSubscriber;
+import rx.Observable;
 import rx.Producer;
 
 import java.io.Serializable;
+import java.util.Arrays;
 
-import static akka.actor.ActorPaths.fromString;
-import static java.util.Arrays.asList;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.CheckFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Merge;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Operator;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Supplier;
 import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.stageName;
@@ -58,7 +57,7 @@ public class MessagesHelper {
         return flowMessage((RemoteOperator<String, String>) subscriber -> subscriber);
     }
 
-    public static SetFlow flowMessage(final RemoteOperator<? extends Serializable,? extends Serializable> operator) {
+    public static SetFlow flowMessage(final RemoteOperator<? extends Serializable, ? extends Serializable> operator) {
         return flowMessage(operator, new RemoteOperatorWithSubscriber<>(new RemoteSubscriberImpl()));
     }
 
@@ -66,23 +65,28 @@ public class MessagesHelper {
         return flowMessage(s -> s, new RemoteOperatorWithSubscriber<>(new RemoteSubscriberImpl()));
     }
 
-    public static SetFlow flowMessage(final RemoteOperator<?,?> operator, final RemoteOperator<?, ?> subscriber) {
+    public static SetFlow flowMessage(final RemoteOperator<?, ?> operator, final RemoteOperator<?, ?> subscriber) {
         return SetFlow.newBuilder()
                 .setFlowName(FlowName)
-                .addAllStages(asList(
-                        Stage.newBuilder()
-                                .setAddress(Host0)
-                                .setOperator(ByteString.EMPTY)
-                                .setType(Supplier).build(),
-                        Stage.newBuilder()
-                                .setAddress(Host1)
-                                .setOperator(wrap(codec.pack(operator)))
-                                .setType(Operator).build(),
+                .setStage(
                         Stage.newBuilder()
                                 .setAddress(Host2)
                                 .setOperator(wrap(codec.pack(subscriber)))
-                                .setType(Operator).build()
-                ))
+                                .setType(Operator)
+                                .setId(0)
+                                .addStages(
+                                        Stage.newBuilder()
+                                                .setAddress(Host1)
+                                                .setOperator(wrap(codec.pack(operator)))
+                                                .setType(Operator)
+                                                .setId(1)
+                                                .addStages(
+                                                        Stage.newBuilder()
+                                                                .setAddress(Host0)
+                                                                .setOperator(wrap(codec.pack((RemoteSupplier<Observable<Serializable>>) Observable::empty)))
+                                                                .setType(Supplier)
+                                                                .setId(2))
+                                ))
                 .build();
     }
 
@@ -94,6 +98,43 @@ public class MessagesHelper {
 
     public static SetFlow setFlowMessage(final RemoteOperator operator) {
         return flowMessage(operator);
+    }
+
+    public static SetFlow flowMessageWithMergeWithTwoSubStages() {
+        final RemoteOperator<?, ?> operator = s -> s;
+        final RemoteOperator<?, ?> subscriber = new RemoteOperatorWithSubscriber<>(new RemoteSubscriberImpl());
+        Stage.Builder leafStage = Stage.newBuilder()
+                .setAddress(Host0)
+                .setOperator(wrap(codec.pack((RemoteSupplier<Observable<Serializable>>) Observable::empty)))
+                .setType(Supplier);
+        Stage.Builder stages = Stage.newBuilder()
+                .setAddress(Host1)
+                .setOperator(wrap(codec.pack(operator)))
+                .setType(Operator);
+
+        return SetFlow.newBuilder()
+                .setFlowName("flow")
+                .setParentFlowName("parent flow")
+                .setStage(Stage.newBuilder()
+                        .setAddress(Host2)
+                        .setOperator(wrap(codec.pack(subscriber)))
+                        .setType(Operator)
+                        .setId(0)
+                        .addStages(Stage.newBuilder()
+                                .setAddress(Host1)
+                                .setOperator(wrap(codec.pack(new RemoteMergeOperatorImpl<>())))
+                                .setType(Merge)
+                                .setId(1)
+                                .addAllStages(Arrays.asList(
+                                        stages.setId(2).addStages(
+                                                leafStage.setId(3)
+                                        ).build(),
+                                        stages.setId(4).addStages(
+                                                leafStage.setId(5)
+                                        ).build()
+                                ))
+                        )
+                ).build();
     }
 
     private static class RemoteSubscriberImpl implements RemoteSubscriber {

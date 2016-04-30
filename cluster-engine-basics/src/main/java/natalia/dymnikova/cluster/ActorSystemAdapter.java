@@ -39,5 +39,5 @@ public interface ActorSystemAdapter {
 
     String actorSystemName();
 
-    Scheduler scheduler();
+    SchedulerService scheduler();
 }

@@ -24,7 +24,6 @@ import java.io.Serializable;
 /**
  * 
  */
-public interface RemoteOperator<I extends Serializable, O extends Serializable> extends Operator<O, I>, Remote {
-    @Override
+public interface RemoteOperator<I extends Serializable, O extends Serializable> extends Remote {
     Subscriber<? super I> call(Subscriber<? super O> subscriber);
 }

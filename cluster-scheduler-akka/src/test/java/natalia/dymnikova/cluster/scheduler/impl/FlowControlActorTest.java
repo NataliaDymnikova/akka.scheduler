@@ -18,11 +18,13 @@ package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
+import akka.actor.ActorSystem;
 import akka.actor.Props;
 import akka.actor.SupervisorStrategy.Directive;
 import akka.cluster.Cluster;
 import natalia.dymnikova.cluster.ActorAdapter;
 import natalia.dymnikova.cluster.SpringAkkaExtensionId.AkkaExtension;
+import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.State;
 import natalia.dymnikova.test.TestActorRef;
@@ -128,9 +130,14 @@ public class FlowControlActorTest {
     @Test
     public void shouldSendErrorToAPeersWhenStageIsTerminated() throws Exception {
         final SetFlow.Builder builder = this.flow.toBuilder();
-        builder.getStagesBuilderList()
-                .get(this.flow.getStagesCount() - 1)
-                .setAddress(flow.getStages(this.flow.getStagesCount() - 2).getAddress());
+        builder.getStageBuilder()
+                .getStagesBuilderList().get(0)
+                .getStagesBuilderList().get(0)
+                .setAddress(flow.getStage().getStages(0).getAddress());
+
+//        builder.getStagesBuilderList()
+//                .get(this.flow.getStagesCount() - 1)
+//                .setAddress(flow.getStages(this.flow.getStagesCount() - 2).getAddress());
 
         flowControlActor.flow = builder.build();
 
@@ -163,6 +170,15 @@ public class FlowControlActorTest {
                 .build());
 
         verify(adapter, never()).stop(self);
+    }
+
+    @Test
+    public void shouldTerminateCompleted() throws Exception {
+        flowControlActor.preStart();
+
+        flowControlActor.handle(Flow.Completed.getDefaultInstance());
+
+        verify(adapter).stop(self);
     }
 
     public ActorSelection givenRemoteFlowControlActorSelection(final SetFlow flow, final int stageIndex) {

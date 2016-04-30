@@ -16,14 +16,18 @@
 
 package natalia.dymnikova.cluster.util;
 
+import akka.actor.ActorRef;
+import scala.Option;
 import scala.concurrent.Future;
 import scala.runtime.AbstractFunction1;
 import scala.util.Try;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static akka.dispatch.ExecutionContexts.fromExecutor;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
+import static java.util.Optional.ofNullable;
 
 /**
  * 
@@ -46,5 +50,13 @@ public class ScalaToJava {
         }, fromExecutor(directExecutor()));
 
         return javaFuture;
+    }
+
+    public static <T> Optional<T> toJava(final Option<T> child) {
+        if (child.isEmpty()) {
+            return Optional.empty();
+        } else {
+            return ofNullable(child.get());
+        }
     }
 }

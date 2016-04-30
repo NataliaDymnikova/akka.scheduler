@@ -17,6 +17,7 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -30,7 +31,7 @@ import static java.util.stream.Collectors.toList;
 /**
  *
  */
-
+@Lazy
 @Component
 public class RoundRobinGetAddressesStrategy implements GetAddressesStrategy {
 

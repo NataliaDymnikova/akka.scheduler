@@ -16,42 +16,78 @@
 
 package natalia.dymnikova.util;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
+import com.google.protobuf.ByteString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.util.streamex.EntryStream;
+import javax.util.streamex.StreamEx;
 import java.io.Closeable;
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.channels.OverlappingFileLockException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.concurrent.TimeUnit;
+import java.nio.file.attribute.UserDefinedFileAttributeView;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.OptionalInt;
+import java.util.Set;
+import java.util.StringJoiner;
 import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 
+import static com.google.common.collect.Maps.transformEntries;
+import static java.lang.String.valueOf;
 import static java.lang.System.currentTimeMillis;
+import static java.lang.Thread.currentThread;
 import static java.lang.Thread.sleep;
+import static java.lang.management.ManagementFactory.getRuntimeMXBean;
+import static java.nio.ByteBuffer.wrap;
+import static java.nio.channels.FileChannel.open;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.nio.file.Files.delete;
+import static java.nio.file.FileVisitResult.CONTINUE;
 import static java.nio.file.Files.exists;
+import static java.nio.file.Files.getFileAttributeView;
+import static java.nio.file.Files.move;
+import static java.nio.file.Files.readAllBytes;
+import static java.nio.file.Files.readAttributes;
 import static java.nio.file.Files.walkFileTree;
 import static java.nio.file.Files.write;
+import static java.nio.file.Paths.get;
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
+import static java.nio.file.StandardOpenOption.WRITE;
+import static java.time.Instant.now;
+import static java.time.format.DateTimeFormatter.ISO_INSTANT;
+import static javax.util.streamex.EntryStream.of;
 import static natalia.dymnikova.util.MoreThrowables.propagateUnchecked;
 
 /**
- * 
+ *
  */
 public class MoreFiles {
     private static final Logger log = LoggerFactory.getLogger(MoreFiles.class);
+    public static final long DefaultTimoutAfterLockFailure = 1000L;
 
     public static void deleteRecursively(final Path path) {
         if (exists(path)) {
@@ -66,9 +102,11 @@ public class MoreFiles {
     public static void replace(final Path file,
                                final String content) {
         try {
+            createDirectories(file.toAbsolutePath().normalize().getParent());
+
             final Path tmpFile = file.resolveSibling(file.getFileName().toString() + ".tmp");
             write(tmpFile, content.getBytes(UTF_8));
-            Files.move(tmpFile, file, REPLACE_EXISTING);
+            move(tmpFile, file, REPLACE_EXISTING, ATOMIC_MOVE);
         } catch (final IOException e) {
             throw propagateUnchecked(e);
         }
@@ -102,80 +140,176 @@ public class MoreFiles {
         }
     }
 
-    public interface FileCallback {
-        void apply(final RandomAccessFile file) throws IOException;
-    }
-
-    public static abstract class TryLockCondition {
-
-        public abstract boolean shouldContinue();
-
-        public static TryLockCondition timeout(final long timeout, final TimeUnit timeUnit) {
-            return new TimeoutCondition(timeout, timeUnit);
-        }
-
-        public static TryLockCondition and(final TryLockCondition... conditions) {
-            return new AndCondition(conditions);
+    public static void createDirectories(final Path dir) {
+        try {
+            Files.createDirectories(dir.toAbsolutePath().normalize());
+        } catch (final IOException e) {
+            throw propagateUnchecked(e);
         }
     }
 
-    private static class AndCondition extends TryLockCondition {
-
-        private final TryLockCondition[] conditions;
-
-        public AndCondition(final TryLockCondition[] conditions) {
-            this.conditions = conditions;
+    public static Stream<Path> files(final Path dir, final String glob) {
+        if (!Files.exists(dir)) {
+            return Collections.<Path>emptyList().stream();
         }
 
-        @Override
-        public boolean shouldContinue() {
-            for (TryLockCondition condition : conditions) {
-                if (!condition.shouldContinue()) {
-                    return false;
+        try {
+            final PathMatcher pathMatcher = dir.getFileSystem().getPathMatcher("glob:" + glob);
+
+            final List<Path> paths = new ArrayList<>();
+            walkFileTree(dir, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(final Path file, BasicFileAttributes attrs) throws IOException {
+                    if (pathMatcher.matches(dir.relativize(file))) {
+                        paths.add(file);
+                    }
+                    return CONTINUE;
                 }
-            }
-            return true;
+            });
+
+            return paths.stream();
+        } catch (final IOException e) {
+            throw propagateUnchecked(e);
         }
     }
 
-    private static class TimeoutCondition extends TryLockCondition {
-
-        private final long end;
-
-        public TimeoutCondition(final long timeout, final TimeUnit timeUnit) {
-            end = currentTimeMillis() + timeUnit.toMillis(timeout);
-        }
-
-        @Override
-        public boolean shouldContinue() {
-            return end > currentTimeMillis();
-        }
+    public static void withLock(final Path path, final Runnable runnable, final Duration timeout) {
+        withLock(path, () -> {
+            runnable.run();
+            return null;
+        }, timeout);
     }
 
-    public static void tryLock(final File file,
-                               final String mode,
-                               final TryLockCondition condition,
-                               final FileCallback fileCallback) throws IOException, InterruptedException {
-        if (!file.exists()) {
-            throw new FileNotFoundException(file.toString());
-        }
+    public static <T> T withLock(final Path lockFile, final Supplier<T> supplier, final Duration timeout) {
+        createDirectories(lockFile.toAbsolutePath().normalize().getParent());
 
-        while (condition.shouldContinue()) {
-            try {
-                try (final RandomAccessFile raFile = new RandomAccessFile(file, mode)) {
-                    try (final FileLock lock = raFile.getChannel().lock()) {
-                        log.trace("Successfully acquired lock on {}", file);
+        final long end = currentTimeMillis() + timeout.toMillis();
 
-                        fileCallback.apply(raFile);
-                        return;
+        while (end > currentTimeMillis()) {
+            try (final FileChannel fc = open(lockFile, CREATE, WRITE, TRUNCATE_EXISTING)) {
+                final FileLock fileLock = fc.tryLock(0, Long.MAX_VALUE, false);
+                if (fileLock != null) {
+                    try {
+                        writeLockIdentity(fc);
+                        return supplier.get();
+                    } finally {
+                        fileLock.close();
+                    }
+                } else {
+                    log.trace("Cannot get lock on {}", lockFile);
+                    try {
+                        sleep(DefaultTimoutAfterLockFailure);
+                    } catch (final InterruptedException e) {
+                        currentThread().interrupt();
+                        throw new UncheckedIOException(new IOException("Cannot lock file " + lockFile));
                     }
                 }
-            } catch (final FileNotFoundException | OverlappingFileLockException e) {
-                log.trace("Failed to acquire lock on file {} due to error {}", file, e.getMessage());
-                sleep(1000L);
+            } catch (final IOException e) {
+                throw propagateUnchecked(e);
             }
         }
-        throw new OverlappingFileLockException();
+
+        throw new UncheckedIOException(new IOException(
+                "Cannot lock file " + lockFile + " in " + timeout + " process identity holding lock"
+        ));
+    }
+
+    public static String toString(final Path lockFile) {
+        try {
+            return new String(readAllBytes(lockFile), UTF_8);
+        } catch (final IOException e) {
+            throw propagateUnchecked(e);
+        }
+    }
+
+    private static void writeLockIdentity(final FileChannel fc) throws IOException {
+        fc.write(wrap((getRuntimeMXBean().getName() + "\n").getBytes(UTF_8)));
+        fc.write(wrap((get(".").toAbsolutePath().normalize() + "\n").getBytes(UTF_8)));
+        fc.write(wrap((ISO_INSTANT.format(now()) + "\n").getBytes(UTF_8)));
+        fc.force(true);
+    }
+
+    public static void delete(final Path path) {
+        if (exists(path)) {
+            try {
+                Files.delete(path);
+            } catch (final IOException e) {
+                throw propagateUnchecked(e);
+            }
+        }
+    }
+
+    public static FileLock lockFile(final Path lockFile,
+                                    final Duration timeout) {
+        createDirectories(lockFile.toAbsolutePath().normalize().getParent());
+
+        final long end = currentTimeMillis() + timeout.toMillis();
+
+        while (end > currentTimeMillis()) {
+            try (final FileChannel fc = open(lockFile, CREATE, WRITE, TRUNCATE_EXISTING)) {
+                final FileLock fileLock = fc.tryLock(0, Long.MAX_VALUE, false);
+                if (fileLock != null) {
+                    writeLockIdentity(fc);
+                    return fileLock;
+                } else {
+                    log.trace("Cannot get lock on {}", lockFile);
+                    try {
+                        sleep(DefaultTimoutAfterLockFailure);
+                    } catch (final InterruptedException e) {
+                        currentThread().interrupt();
+                        throw new UncheckedIOException(new IOException("Cannot lock file " + lockFile));
+                    }
+                }
+            } catch (final IOException e) {
+                throw propagateUnchecked(e);
+            }
+        }
+        throw new UncheckedIOException(new IOException("Cannot lock file " + lockFile));
+    }
+
+    public static Stream<String> lines(final Path path) {
+        try {
+            return Files.lines(path);
+        } catch (final IOException e) {
+            throw propagateUnchecked(e);
+        }
+    }
+
+    public static void setAttributes(final Path path, final Map<String, String> attributes) {
+        final UserDefinedFileAttributeView view = getFileAttributeView(path, UserDefinedFileAttributeView.class);
+        of(attributes)
+                .mapValues(v -> v.getBytes(UTF_8))
+                .mapValues(ByteBuffer::wrap)
+                .forEach(e -> {
+                    try {
+                        view.write(e.getKey(), e.getValue());
+                    } catch (final IOException ex) {
+                        throw propagateUnchecked(ex);
+                    }
+                });
+    }
+
+    public static Map<String, String> getAttributes(final Path path) {
+        try {
+            return ImmutableMap.<String, String>builder()
+                    .putAll(transformEntries(
+                            readAttributes(path, "*"), (key, value) -> attributeValue(value)
+                    ))
+                    .putAll(transformEntries(
+                            readAttributes(path, "user:*"), (key, value) -> attributeValue(value)
+                    ))
+                    .build();
+        } catch (final IOException e) {
+            throw propagateUnchecked(e);
+        }
+    }
+
+    private static String attributeValue(final Object attributeValue) {
+        if (attributeValue instanceof byte[]) {
+            return new String((byte[]) attributeValue, UTF_8);
+        } else {
+            return valueOf(attributeValue);
+        }
     }
 
     private static class DeleteDirectoryContent extends SimpleFileVisitor<Path> {
@@ -185,14 +319,14 @@ public class MoreFiles {
         public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) throws IOException {
             log.trace("Deleting {}", file);
             delete(file);
-            return FileVisitResult.CONTINUE;
+            return CONTINUE;
         }
 
         @Override
         public FileVisitResult visitFileFailed(final Path file, final IOException exc) throws IOException {
             log.trace("Deleting {}", file);
             delete(file);
-            return FileVisitResult.CONTINUE;
+            return CONTINUE;
         }
 
         @Override
@@ -200,7 +334,7 @@ public class MoreFiles {
             if (exc == null) {
                 log.trace("Deleting {}", dir);
                 delete(dir);
-                return FileVisitResult.CONTINUE;
+                return CONTINUE;
             } else {
                 throw exc;
             }

@@ -32,7 +32,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import rx.Subscriber;
 
@@ -45,6 +44,7 @@ import static org.mockito.Matchers.isA;
 import static org.mockito.Matchers.same;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -88,9 +88,9 @@ public class ComputePoolTest {
         doReturn(sender).when(adapter).sender();
         doReturn(self).when(adapter).self();
 
-        doReturn(mock(BasicChildrenCreater.class)).when(context).getBean(same(BasicChildrenCreater.class), isA(SetFlow.class));
+        doReturn(mock(BasicChildrenCreator.class)).when(context).getBean(same(BasicChildrenCreator.class), isA(SetFlow.class));
 
-        doReturn(flowControlActorProps).when(extension).props(same(FlowControlActor.class), isA(SetFlow.class), isA(BasicChildrenCreater.class));
+        doReturn(flowControlActorProps).when(extension).props(same(FlowControlActor.class), isA(SetFlow.class), isA(BasicChildrenCreator.class));
         doReturn(flowControlActorPropsRef).when(adapter).actorOf(
                 same(flowControlActorProps), any()
         );
@@ -101,6 +101,35 @@ public class ComputePoolTest {
     @Test
     public void shouldSendError() throws Exception {
         computePool.handle(checkFlowMessage(new TestOperator(false)));
+        verify(sender).tell(isA(State.Error.class), eq(self));
+    }
+
+    @Test
+    public void shouldSendErrorIfGetRunCriteriaThrowsException() throws Exception {
+        computePool.handle(checkFlowMessage(new TestOperator(false) {
+            @Override
+            public RunCriteria getRunCriteria() {
+                throw new RuntimeException("Expected");
+            }
+        }));
+        verify(sender).tell(isA(State.Error.class), eq(self));
+    }
+
+    @Test
+    public void shouldSendErrorIfFailedToAutowireBeans() throws Exception {
+        doThrow(new RuntimeException("Expected")).when(autowireHelper).autowire(isA(TestOperator.class));
+        computePool.handle(checkFlowMessage(new TestOperator(false)));
+        verify(sender).tell(isA(State.Error.class), eq(self));
+    }
+
+    @Test
+    public void shouldSendErrorIfRunCriteriaThrowsException() throws Exception {
+        computePool.handle(checkFlowMessage(new TestOperator(false) {
+            @Override
+            public RunCriteria getRunCriteria() {
+                throw new RuntimeException("Expected");
+            }
+        }));
         verify(sender).tell(isA(State.Error.class), eq(self));
     }
 

@@ -37,6 +37,7 @@ import java.util.List;
 import static java.time.Duration.ofSeconds;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.toList;
+import static natalia.dymnikova.cluster.scheduler.impl.FlowHelper.getStageList;
 import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.remoteStageActorPath;
 import static scala.concurrent.duration.Duration.apply;
 
@@ -82,14 +83,13 @@ public class StartingJobActor extends ActorLogic {
 
     @Override
     public void preStart() throws Exception {
-        prevActor = actorSelection(remoteStageActorPath(flow, flow.getStagesCount() - 1));
+        final List<Flow.Stage> stagesList = getStageList(flow.getStage());
+        prevActor = actorSelection(remoteStageActorPath(flow, flow.getStage().getId()));
 
         notReadyStages = new ArrayList<>();
 
-        final List<Flow.Stage> stagesList = flow.getStagesList();
-        for (int i = 0, stagesListSize = stagesList.size(); i < stagesListSize; i++) {
-
-            final ActorSelection selection = actorSelection(remoteStageActorPath(flow, i));
+        for (final Flow.Stage stage : stagesList) {
+            final ActorSelection selection = actorSelection(remoteStageActorPath(flow, stage.getId()));
             notReadyStages.add(selection);
 
             selection.tell(Flow.IsReady.getDefaultInstance(), self());
@@ -99,11 +99,8 @@ public class StartingJobActor extends ActorLogic {
     }
 
     public void handle(final Flow.State.Ok ok) {
-        notReadyStages.removeIf(aSelection -> {
-                    log.debug("Sender: {}", sender().path().toStringWithoutAddress());
-                    log.debug("Selection: {}", aSelection.pathString());
-                    return aSelection.pathString().equals(sender().path().toStringWithoutAddress());
-                }
+        notReadyStages.removeIf(aSelection ->
+                aSelection.pathString().equals(sender().path().toStringWithoutAddress())
         );
 
         if (notReadyStages.isEmpty()) {
@@ -119,11 +116,9 @@ public class StartingJobActor extends ActorLogic {
         log.debug("Not ready stages: {}", notReadyStages);
 
         if (checkIfReadyResponses.number >= countIterations) {
-            final StagesUnready unready = new StagesUnready(notReadyStages.stream()
+            throw new StagesUnready(notReadyStages.stream()
                     .map(ActorSelection::toString)
                     .collect(toList()));
-            // ???
-            throw unready;
         }
 
         for (final ActorSelection stage : notReadyStages) {
@@ -144,5 +139,4 @@ public class StartingJobActor extends ActorLogic {
             this.number = number;
         }
     }
-
 }

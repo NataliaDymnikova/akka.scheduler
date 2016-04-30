@@ -16,15 +16,11 @@
 
 package natalia.dymnikova.util;
 
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 import static java.util.Arrays.asList;
 import static java.util.concurrent.CompletableFuture.completedFuture;
@@ -33,7 +29,7 @@ import static java.util.stream.Collectors.toList;
 import static natalia.dymnikova.util.MoreThrowables.unchecked;
 
 /**
- * 
+ *
  */
 public class MoreFutures {
     public static <T> CompletableFuture<T> immediateFuture(final T value) {
@@ -56,23 +52,21 @@ public class MoreFutures {
         return CompletableFuture.allOf(futures)
                 .exceptionally(t -> null)
                 .thenApply(v -> asList(futures)
-                                .stream()
-                                .map(f -> {
-                                    if (f.isCompletedExceptionally()) {
-                                        try {
-                                            return new Result<T>(f.getNow(null), null);
-                                        } catch (Exception e) {
-                                            return new Result<T>(null, e);
-                                        }
-                                    } else {
-                                        return new Result<T>(f.getNow(null), null);
-                                    }
-                                })
-                                .collect(toList())
+                        .stream()
+                        .map(f -> {
+                            if (f.isCompletedExceptionally()) {
+                                try {
+                                    return new Result<T>(f.getNow(null), null);
+                                } catch (Exception e) {
+                                    return new Result<T>(null, e);
+                                }
+                            } else {
+                                return new Result<T>(f.getNow(null), null);
+                            }
+                        })
+                        .collect(toList())
                 );
     }
-
-
 
     public static <T> T getUncheckedNow(final CompletableFuture<T> future) {
         return getUnchecked(future, 1, MICROSECONDS);

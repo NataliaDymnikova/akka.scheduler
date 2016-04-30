@@ -19,11 +19,11 @@ package natalia.dymnikova.cluster.scheduler.impl;
 import akka.actor.ActorSystem;
 import natalia.dymnikova.cluster.scheduler.RemoteFunction;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
-import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorImpl;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.RemoteOperatorWithFunction;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Component;
 import rx.Subscriber;
 
 import static java.util.Collections.emptySet;
@@ -262,10 +262,12 @@ public class RolesCheckerTest {
     }
 
     @Profile("test")
+    @Component
     public static class TestDependencyClass implements TestDependencyInterface {
     }
 
     @Profile("test2")
+    @Component
     public static class TestDependencyClass2 {
     }
 
@@ -276,14 +278,17 @@ public class RolesCheckerTest {
     }
 
     @Profile("test1")
+    @Component
     public static class TestDependencyClassImpl1
             implements TestDependencyInterfaceWithSomeImpl, TestDependencyInterfaceWithSomeImpl2 {
     }
 
     @Profile("test2")
+    @Component
     public static class TestDependencyClassImpl2 implements TestDependencyInterfaceWithSomeImpl {
     }
 
+    @Component
     public static class TestDependencyClassWithoutProfile implements TestDependencyInterfaceWithSomeImpl2 {
     }
 

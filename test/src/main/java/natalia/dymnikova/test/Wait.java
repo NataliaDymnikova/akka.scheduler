@@ -16,50 +16,49 @@
 
 package natalia.dymnikova.test;
 
-import org.junit.Assert;
-
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import static java.lang.String.valueOf;
 import static java.lang.System.currentTimeMillis;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.lang.Thread.sleep;
+import static java.time.Duration.ofMillis;
+import static java.time.Duration.ofSeconds;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 
 /**
  * 
  */
 public class Wait {
 
-    public static void waitFor(final Predicate<Void> condition) throws InterruptedException {
-        waitFor(condition, SECONDS, 10);
-    }
-
-    public static void waitFor(final Predicate<Void> condition, TimeUnit timeUnit, long timeout) throws InterruptedException {
-        waitFor(condition, timeUnit, timeout, MILLISECONDS, 100);
+    public static void waitFor(final Predicate<Void> condition) {
+        waitFor(condition, ofSeconds(10));
     }
 
     public static void waitFor(final Predicate<Void> condition,
-                               final TimeUnit timeoutUnit,
-                               final long timeout,
-                               final long interval) throws InterruptedException {
-        waitFor(condition, timeoutUnit, timeout, timeoutUnit, interval);
+                               final Duration duration) {
+        waitFor(condition, duration, ofMillis(100));
     }
 
     public static void waitFor(final Predicate<Void> condition,
-                               final TimeUnit timeoutUnit,
-                               final long timeout,
-                               final TimeUnit intervalUnit,
-                               final long interval) throws InterruptedException {
-        for (final long endTime = currentTimeMillis() + timeoutUnit.toMillis(timeout); currentTimeMillis() < endTime; ) {
+                               final Duration timeout,
+                               final Duration interval){
+        for (final long endTime = currentTimeMillis() + timeout.toMillis(); currentTimeMillis() < endTime; ) {
             if (condition.test(null)) {
                 return;
             }
-            Thread.sleep(intervalUnit.toMillis(interval));
+            try {
+                sleep(interval.toMillis());
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
         }
-        Assert.assertThat(
+        assertThat(
             condition.test(null),
             is(true)
         );
@@ -67,28 +66,23 @@ public class Wait {
 
     public static <T> T waitFor(final Supplier<T> supplier,
                                 final Predicate<T> condition,
-                                final TimeUnit timeoutUnit,
-                                final long timeout,
-                                final long interval) throws InterruptedException {
-        return waitFor(supplier, condition, timeoutUnit, timeout, timeoutUnit, interval);
-    }
-
-    public static <T> T waitFor(final Supplier<T> supplier,
-                                final Predicate<T> condition,
-                                final TimeUnit timeoutUnit,
-                                final long timeout,
-                                final TimeUnit intervalUnit,
-                                final long interval) throws InterruptedException {
-        for (final long endTime = currentTimeMillis() + timeoutUnit.toMillis(timeout); currentTimeMillis() < endTime; ) {
+                                final Duration timeout,
+                                final Duration interval) {
+        for (final long endTime = currentTimeMillis() + timeout.toMillis(); currentTimeMillis() < endTime; ) {
             final T value = supplier.get();
             if (condition.test(value)) {
                 return value;
             }
-            Thread.sleep(intervalUnit.toMillis(interval));
+            try {
+                sleep(interval.toMillis());
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
         }
 
         final T value = supplier.get();
-        Assert.assertThat(
+        assertThat(
             value,
             is(notNullValue())
         );
@@ -96,8 +90,7 @@ public class Wait {
         if (condition.test(value)) {
             return value;
         } else {
-            Assert.fail(String.valueOf(value));
-            return null;
+            throw new AssertionError(valueOf(value));
         }
     }
 }

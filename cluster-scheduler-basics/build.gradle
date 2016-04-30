@@ -1,5 +1,6 @@
 dependencies {
     compile libraries.rxjava,
+            libraries.rxordered,
             project(":common")
 
 }

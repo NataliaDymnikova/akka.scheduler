@@ -33,13 +33,14 @@ import rx.Observable;
 import rx.Producer;
 import scala.collection.immutable.SortedSet;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
+import static java.time.Duration.ofSeconds;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static natalia.dymnikova.test.Wait.waitFor;
-import static natalia.dymnikova.util.MoreThrowables.unchecked;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
@@ -77,7 +78,7 @@ public class FlowTest {
         waitFor(
                 () -> cluster.readView().members(),
                 ((Predicate<SortedSet<Member>>) SortedSet<Member>::isEmpty).negate(),
-                SECONDS, 15, 1
+                ofSeconds(15), ofSeconds(1)
         );
     }
 
@@ -88,10 +89,8 @@ public class FlowTest {
         scheduler.createObservable(new TestSupplier())
                 .map(function)
                 .map(function)
-                .subscribe(new TestConsumer(), t -> {
-                    log.error(t.getMessage(), t);
-                    throw unchecked(t);
-                });
+                .subscribe(new TestConsumer())
+                .get(15, SECONDS);
 
         assertThat(
                 consumerAdapter.get(15, SECONDS),
@@ -106,13 +105,11 @@ public class FlowTest {
         scheduler.createObservable(new TestSupplierWithFuture())
                 .map(function)
                 .map(function)
-                .subscribe(new TestConsumer(), t -> {
-                    log.error(t.getMessage(), t);
-                    throw unchecked(t);
-                });
+                .subscribe(new TestConsumer())
+        .get(15, SECONDS);
 
         assertThat(
-                futureCount.get(5, SECONDS).summ,
+                futureCount.get(15, SECONDS).summ,
                 is(totalRequestedElements)
         );
     }

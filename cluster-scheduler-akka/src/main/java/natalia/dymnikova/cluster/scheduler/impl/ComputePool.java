@@ -26,10 +26,12 @@ import natalia.dymnikova.cluster.SpringAkkaExtensionId.AkkaExtension;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.CheckFlow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.State;
+import natalia.dymnikova.util.AutowireHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Profile;
 
 import static natalia.dymnikova.cluster.ActorPaths.COMPUTE_POOL;
 import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
@@ -40,6 +42,7 @@ import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
  * <p>
  */
 @Actor
+@Profile("compute")
 @AutostartActor(COMPUTE_POOL)
 public class ComputePool extends ActorLogic {
     private static final Logger log = LoggerFactory.getLogger(ComputePool.class);
@@ -53,6 +56,9 @@ public class ComputePool extends ActorLogic {
     @Autowired
     private ApplicationContext context;
 
+    @Autowired
+    private AutowireHelper autowireHelper;
+
     public ComputePool(final ActorAdapter adapter) {
         super(adapter);
 
@@ -65,38 +71,43 @@ public class ComputePool extends ActorLogic {
     }
 
     public void handle(final CheckFlow checkFlow) {
-        log.trace("Handing CheckFlow: {}", lazyDebugString(checkFlow));
+        log.trace("Handling CheckFlow: {}", lazyDebugString(checkFlow));
 
-        if (!check(checkFlow.getOperator())) {
+        try {
+            if (!check(checkFlow.getOperator())) {
+                sender().tell(State.Error.getDefaultInstance(), self());
+            } else {
+                sender().tell(State.Ok.getDefaultInstance(), self());
+            }
+        } catch (final RuntimeException e) {
+            log.error(e.getMessage(), e);
             sender().tell(State.Error.getDefaultInstance(), self());
-        } else {
-            sender().tell(State.Ok.getDefaultInstance(), self());
         }
     }
 
     public void handle(final SetFlow flow) {
-        log.trace("Handing SetFlow: {}", lazyDebugString(flow));
+        log.trace("Handling SetFlow: {}", lazyDebugString(flow));
         log.debug("Create BasicChildrenCreator");
 
         actorOf(extension.props(
                 FlowControlActor.class,
                 flow,
-                context.getBean(BasicChildrenCreater.class, flow)
+                context.getBean(BasicChildrenCreator.class, flow)
         ), flow.getFlowName());
     }
 
     private void handle(final LocalSetFlow flow) {
-        log.trace("Handing LocalSetFlow: {}", flow);
+        log.trace("Handling LocalSetFlow: {}", flow);
         log.debug("Create LocalChildrenCreator");
         actorOf(extension.props(
                 FlowControlActor.class,
                 flow.getFlow(),
-                context.getBean(LocalChildrenCreater.class, flow)
+                context.getBean(LocalChildrenCreator.class, flow)
         ), flow.getFlow().getFlowName());
     }
 
     private boolean check(final ByteString operator) {
-        return codec.unpackAndAutowire(operator).getRunCriteria().check();
+        return autowireHelper.autowire(codec.unpackRemote(operator)).getRunCriteria().check();
     }
 
 }

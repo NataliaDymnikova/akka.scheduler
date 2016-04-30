@@ -16,10 +16,13 @@
 
 package natalia.dymnikova.cluster.scheduler;
 
+import rx.Observable.Operator;
+import rx.Subscriber;
+
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 /**
  * Mimics {@link rx.Observable} api but for serializable only types
@@ -36,20 +39,44 @@ public interface RemoteObservable<T extends Serializable> {
     <Out extends Serializable> RemoteObservable<Out> map(final RemoteFunction<T, Out> function,
                                                          final InetSocketAddress address);
 
+    <Out extends Serializable> RemoteObservable<Out> map(final Operator<Out, T> operator);
+
+
     /**
      * Submits steps to the cluster as well as subscriber instance. Node hosting a {@code subscriber} becomes a consumer of the processing results.
      *
      * @param subscriber - a an instance of {@link RemoteSubscriber}
-     * @return an instance of {@link RemoteSubscription}
+     * @return an instance of {@link CompletableFuture} which will be resolved with
+     * an instance of {@link RemoteSubscription} if scheduling was successful
      */
     CompletableFuture<? extends RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber);
 
+    /**
+     * Submits steps to the cluster as well as subscriber instance. Node hosting a {@code subscriber} becomes a consumer of the processing results.
+     *
+     * @param subscriber - a an instance of {@link RemoteSubscriber}
+     * @param address    - and address on a node which should host passed {@code subscriber}
+     * @return an instance of {@link CompletableFuture} which will be resolved with
+     * an instance of {@link RemoteSubscription} if scheduling was successful
+     */
     CompletableFuture<? extends RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber,
                                                               final InetSocketAddress address);
 
-    CompletableFuture<? extends RemoteSubscription> subscribe(final Consumer<T> onNext,
-                                                              final Runnable onComplete,
-                                                              final Consumer<Throwable> onError);
-
+    /**
+     * Submits steps to the cluster as well as subscriber instance. Current node becomes a consumer of the processing results.
+     *
+     * @return an instance of {@link CompletableFuture} which will be resolved with
+     * an instance of {@link RemoteSubscription} if scheduling was successful
+     */
     CompletableFuture<? extends RemoteSubscription> subscribe();
+
+    /**
+     * Submits steps to the cluster as well as subscriber instance. Current node becomes a consumer of the processing results.
+     *
+     * @param subscriber - an instance of {@link Subscriber} tho receive results
+     * @return an instance of {@link CompletableFuture} which will be resolved with
+     * an instance of {@link RemoteSubscription} if scheduling was successful
+     */
+    CompletableFuture<? extends RemoteSubscription> subscribe(final Subscriber<? super T> subscriber);
+
 }

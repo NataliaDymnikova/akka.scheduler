@@ -17,6 +17,8 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import natalia.dymnikova.cluster.scheduler.RemoteSubscription;
+import natalia.dymnikova.cluster.scheduler.akka.Flow;
+import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 
 import java.util.List;
 
@@ -25,12 +27,18 @@ import java.util.List;
  */
 public class RemoteSubscriptionImpl implements RemoteSubscription {
     private final List<String> addresses;
+    private final SetFlow flow;
 
-    public RemoteSubscriptionImpl(final List<String> addresses) {
+    public RemoteSubscriptionImpl(final List<String> addresses, final SetFlow flow) {
         this.addresses = addresses;
+        this.flow = flow;
     }
 
     public List<String> getAddresses() {
         return addresses;
+    }
+
+    public SetFlow getFlow() {
+        return flow;
     }
 }

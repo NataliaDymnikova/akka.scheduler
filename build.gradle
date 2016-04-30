@@ -9,6 +9,10 @@ ext.libraries = [
                 'io.reactivex:rxjava:1.1.0'
         ],
 
+        rxordered : [
+                'com.conductor:rx-ordered-data:0.0.2'
+        ],
+
         streamex: [
                 'io.github.amaembo:streamex:0.3.8'
         ],
@@ -51,6 +55,10 @@ ext.libraries = [
 
         jimfs          : [
                 'com.google.jimfs:jimfs:1.0'
+        ],
+
+        humanize       : [
+                'com.github.mfornos:humanize-slim:1.2.2',
         ],
 ]
 

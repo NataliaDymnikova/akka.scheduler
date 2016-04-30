@@ -17,20 +17,21 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.ActorRef;
-import akka.actor.ActorSelection;
 import akka.actor.Address;
 import akka.cluster.Cluster;
 import com.google.protobuf.ByteString;
-import natalia.dymnikova.cluster.ActorPaths;
 import natalia.dymnikova.cluster.scheduler.Remote;
 import natalia.dymnikova.cluster.scheduler.RemoteFunction;
+import natalia.dymnikova.cluster.scheduler.RemoteMergeOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteObservable;
 import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteSubscriber;
 import natalia.dymnikova.cluster.scheduler.RemoteSubscription;
 import natalia.dymnikova.cluster.scheduler.RemoteSupplier;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.StageType;
-import natalia.dymnikova.configuration.ConfigValue;
+import natalia.dymnikova.util.MoreFutures;
+import natalia.dymnikova.util.MoreSubscribers;
+import natalia.dymnikova.util.MoreSubscribers.SubscriberToCompletableFutureAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,31 +39,29 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 import rx.Observable;
+import rx.Observable.OnSubscribe;
+import rx.Observable.Operator;
 import rx.Subscriber;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import java.util.function.BiFunction;
+import java.util.function.Supplier;
 
-import static akka.actor.AddressFromURIString.apply;
+import static com.google.protobuf.ByteString.EMPTY;
 import static java.net.InetSocketAddress.createUnresolved;
+import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
 import static java.util.concurrent.CompletableFuture.completedFuture;
-import static java.util.stream.Collectors.toList;
-import static natalia.dymnikova.cluster.ActorPaths.computePool;
-import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
-import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.NotSet;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Local;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Merge;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Operator;
-import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Supplier;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 import static natalia.dymnikova.util.MoreFutures.allOf;
 import static org.springframework.beans.factory.config.BeanDefinition.SCOPE_PROTOTYPE;
@@ -75,11 +74,16 @@ import static org.springframework.beans.factory.config.BeanDefinition.SCOPE_PROT
 @Scope(SCOPE_PROTOTYPE)
 public class AkkaBackedRemoteObservable<T extends Serializable> implements RemoteObservable<T> {
 
+    private CompletableFuture<StageContainer> lastStage = completedFuture(null);
+
     private static final Logger log = LoggerFactory.getLogger(AkkaBackedRemoteObservable.class);
 
-    final private List<StageContainer> stages = new ArrayList<>(3);
-
     final private String flowName;
+
+    private Optional<String> parentFlowName;
+
+    @Autowired
+    private CreateAndSendSetFlow creatorSetFlow;
 
     @Autowired
     private NodeSearcher nodeSearcher;
@@ -91,16 +95,23 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
     protected Cluster cluster;
 
     @Autowired
-    private SetFlowFactory setFlowFactory;
-
-    @Autowired
-    private SetFlowDestinationFactory setFlowDestinationFactory;
-
-    @Autowired
     private ConverterAddresses converterAddresses;
 
-    public AkkaBackedRemoteObservable(final String flowName) {
+    public AkkaBackedRemoteObservable(final String flowName, final Optional<String> parentFlowName) {
         this.flowName = flowName;
+        this.parentFlowName = parentFlowName;
+        log.trace("Allocated new flow {}, parent {}", flowName, parentFlowName);
+    }
+
+    public RemoteObservable<T> withOnSubscribe(final OnSubscribe<T> onSubscribe) {
+        lastStage = completedFuture(new StageContainer(
+                wrapAddress(selfAddress()),
+                new OnSubscribeWrapper<>(onSubscribe),
+                EMPTY,
+                Local,
+                emptyList()
+        ));
+        return this;
     }
 
     public RemoteObservable<T> withSupplierOfObservable(final RemoteSupplier<Observable<T>> supplier) {
@@ -110,11 +121,12 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
     public RemoteObservable<T> withSupplierOfObservable(final RemoteSupplier<Observable<T>> supplier,
                                                         final InetSocketAddress address) {
         final ByteString bytes = wrap(codec.pack(supplier));
-        stages.add(new StageContainer(
-                findComputePool(supplier, ofNullable(address)),
+        lastStage = findComputePool(supplier, ofNullable(address)).thenApply(l -> new StageContainer(
+                l,
                 supplier,
                 bytes,
-                Supplier
+                StageType.Supplier,
+                emptyList()
         ));
         return this;
     }
@@ -126,12 +138,34 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
     public RemoteObservable<T> withSupplier(final RemoteSupplier<T> supplier,
                                             final InetSocketAddress address) {
         final ByteString bytes = wrap(codec.pack(supplier));
-        stages.add(new StageContainer(
-                findComputePool(supplier, ofNullable(address)),
+        lastStage = findComputePool(supplier, ofNullable(address)).thenApply(l -> new StageContainer(
+                l,
                 supplier,
                 bytes,
-                Supplier
+                StageType.Supplier,
+                emptyList()
         ));
+        return this;
+    }
+
+    public RemoteObservable<T> withMerge(final RemoteMergeOperator<T> merge,
+                                         final Observable<RemoteObservable<T>> observables) {
+
+        final SubscriberToCompletableFutureAdapter<CompletableFuture<StageContainer>> subscriber = new SubscriberToCompletableFutureAdapter<>();
+
+        //noinspection unchecked
+        observables.map(obs -> (AkkaBackedRemoteObservable) obs)
+                .map(obs -> (CompletableFuture<StageContainer>) obs.lastStage)
+                .subscribe(subscriber);
+
+        lastStage = subscriber.future.thenCompose(c -> allOf(c.toArray(new CompletableFuture[c.size()]))).thenApply(c -> new StageContainer(
+                wrapAddress(selfAddress()),
+                merge,
+                wrap(codec.pack(merge)),
+                Merge,
+                (List<StageContainer>) (Object) c
+        ));
+
         return this;
     }
 
@@ -144,11 +178,12 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
     public <Out extends Serializable> RemoteObservable<Out> map(final RemoteOperator<T, Out> operator,
                                                                 final InetSocketAddress address) {
         final ByteString bytes = wrap(codec.pack(operator));
-        stages.add(new StageContainer(
-                findComputePool(operator, ofNullable(address)),
+        lastStage = lastStage.thenCombine(findComputePool(operator, ofNullable(address)), (child, l) -> new StageContainer(
+                l,
                 operator,
                 bytes,
-                Operator
+                Operator,
+                singletonList(child)
         ));
 
         @SuppressWarnings("unchecked")
@@ -169,110 +204,86 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
     }
 
     @Override
+    public <Out extends Serializable> RemoteObservable<Out> map(final Operator<Out, T> operator) {
+        final Address address = cluster.selfAddress();
+
+        lastStage = lastStage.thenApply(child -> new StageContainer(
+                wrapAddress(createUnresolved(address.host().get(), (int) address.port().get())),
+                operator,
+                EMPTY,
+                Local,
+                singletonList(child)
+        ));
+
+        @SuppressWarnings("unchecked")
+        final RemoteObservable<Out> next = (RemoteObservable<Out>) this;
+
+        return next;
+    }
+
+    @Override
     public CompletableFuture<? extends RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber) {
         return subscribe(subscriber, null);
     }
 
     @Override
-    public CompletableFuture<RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber,
-                                                           final InetSocketAddress address) {
+    public CompletableFuture<? extends RemoteSubscription> subscribe(final RemoteSubscriber<T> subscriber,
+                                                                     final InetSocketAddress address) {
         final RemoteOperator operator = new RemoteOperatorWithSubscriber<>(subscriber);
         final ByteString bytes = wrap(codec.pack(operator));
-        stages.add(new StageContainer(
-                findComputePool(operator, ofNullable(address)),
+        lastStage = lastStage.thenCombine(findComputePool(operator, ofNullable(address)), (child, l) -> new StageContainer(
+                l,
                 operator,
                 bytes,
-                Operator
+                Operator,
+                singletonList(child)
         ));
 
-        return sendSetFlow((s, flow) -> s.tell(flow, null));
+        return subscribe();
     }
 
     @Override
-    public CompletableFuture<? extends RemoteSubscription> subscribe(
-            final Consumer<T> onNext,
-            final Runnable onComplete,
-            final Consumer<Throwable> onError
-    ) {
-
-        final Address address = cluster.selfAddress();
-        final RemoteOperator<Serializable, Serializable> operator = (RemoteOperator<Serializable, Serializable>) s -> s;
-
-        stages.add(new StageContainer(
-                findComputePool(
-                        operator,
-                        of(createUnresolved(address.host().get(), (int) address.port().get()))
-                ),
-                operator,
-                ByteString.EMPTY,
-                NotSet
+    public CompletableFuture<? extends RemoteSubscription> subscribe(final Subscriber<? super T> s) {
+        lastStage = lastStage.thenApply(child -> new StageContainer(
+                wrapAddress(selfAddress()),
+                s,
+                EMPTY,
+                Local,
+                singletonList(child)
         ));
-        return sendSetFlow((selection, flow) ->
-                selection.tell(new LocalSetFlow<>(flow, onNext, onComplete, onError), null)
-        );
+
+        return subscribe();
     }
 
     @Override
     public CompletableFuture<? extends RemoteSubscription> subscribe() {
-        return sendSetFlow((s, flow) -> s.tell(flow, null));
+        return lastStage.thenApply(lStage ->
+                creatorSetFlow.sendSetFlow(lStage, flowName, parentFlowName)
+        );
+    }
+
+    private InetSocketAddress selfAddress() {
+        final Address address = cluster.selfAddress();
+        return createUnresolved(address.host().get(), (int) address.port().get());
+    }
+
+    private CompletableFuture<List<Optional<Address>>> wrapAddressInFuture(final InetSocketAddress address) {
+        return completedFuture(wrapAddress(address));
+    }
+
+    private List<Optional<Address>> wrapAddress(InetSocketAddress address) {
+        return singletonList(of(converterAddresses.toAkkaAddress(address)));
     }
 
     private CompletableFuture<List<Optional<Address>>> findComputePool(final Remote operator,
                                                                        final Optional<InetSocketAddress> inetSocketAddress) {
-        return inetSocketAddress.map(address ->
-                completedFuture(singletonList(of(converterAddresses.toAkkaAddress(address))))
-        ).orElseGet(() ->
+        return inetSocketAddress.map(this::wrapAddressInFuture).orElseGet(() ->
                 nodeSearcher.search(operator)
         );
     }
 
-    public CompletableFuture<RemoteSubscription> sendSetFlow(final BiConsumer<ActorSelection, SetFlow> doWithLast) {
-        final CompletableFuture<SetFlow> voidCompletableFuture = resolveCandidates()
-                .thenApply(selections -> {
-                    log.debug("Resolved {} candidates for flow {}", selections.size(), flowName);
-
-                    final SetFlow flow = setFlowFactory.makeFlow(
-                            flowName, stages
-                    );
-
-                    final List<Entry<ActorSelection, Address>> actorSelections = setFlowDestinationFactory.buildDestinations(flow);
-                    final String lastAddress = flow.getStages(flow.getStagesCount() - 1).getAddress();
-
-                    actorSelections.forEach(s -> {
-                        log.warn("Last address: {}, Current address: {}", lastAddress, s.getValue());
-                        if(!lastAddress.equals(s.getValue().toString())) {
-                            s.getKey().tell(flow, null);
-                        } else {
-                            doWithLast.accept(s.getKey(), flow);
-                        }
-                    });
-                    return flow;
-                });
-
-
-        final CompletableFuture<RemoteSubscription> remoteSubscriptionFuture = voidCompletableFuture
-                .thenApply(flow ->
-                        new RemoteSubscriptionImpl(flow.getStagesList().stream()
-                                .map(stage -> stage.getAddress()).collect(toList())
-                        ));
-
-        return remoteSubscriptionFuture;
-    }
-
-    public CompletableFuture<List<List<Optional<ActorSelection>>>> resolveCandidates() {
-        log.debug("Resolving {} candidates for flow {}", stages.size(), flowName);
-
-        @SuppressWarnings("unchecked")
-        final CompletableFuture<List<Optional<ActorSelection>>>[] objects = stages
-                .stream()
-                .map(s -> s.candidates)
-                .toArray(CompletableFuture[]::new);
-
-        return allOf(objects);
-    }
-
-    static abstract class RemoteOperatorImpl<I extends Serializable, O extends Serializable> implements RemoteOperator<I, O>, SelfAware {
-        final Remote delegate;
+    public static abstract class RemoteOperatorImpl<I extends Serializable, O extends Serializable> implements RemoteOperator<I, O>, SelfAware {
+        public final Remote delegate;
 
         protected RemoteOperatorImpl(final Remote delegate) {
             this.delegate = delegate;
@@ -352,20 +363,45 @@ public class AkkaBackedRemoteObservable<T extends Serializable> implements Remot
         }
     }
 
-    public static class StageContainer {
-        public final CompletableFuture<List<Optional<Address>>> candidates;
-        public final Remote remote;
-        public final ByteString remoteBytes;
-        public final StageType stageType;
+    static class OnSubscribeWrapper<T extends Serializable> implements Supplier<Observable<T>> {
+        protected final OnSubscribe<T> onSubscribe;
 
-        public StageContainer(final CompletableFuture<List<Optional<Address>>> candidates,
-                              final Remote remote,
-                              final ByteString remoteBytes,
-                              final StageType stageType) {
-            this.candidates = candidates;
-            this.remote = remote;
-            this.remoteBytes = remoteBytes;
-            this.stageType = stageType;
+        public OnSubscribeWrapper(final OnSubscribe<T> onSubscribe) {
+            this.onSubscribe = onSubscribe;
+        }
+
+        @Override
+        public Observable<T> get() {
+            return Observable.create(onSubscribe);
         }
     }
+
+    public static class StageContainer {
+        public final List<Optional<Address>> candidates;
+        public final ByteString remoteBytes;
+        public final StageType stageType;
+        public final Object action;
+        public final List<StageContainer> previous;
+        public int id;
+
+        public StageContainer(final List<Optional<Address>> candidates,
+                              final Object action,
+                              final ByteString remoteBytes,
+                              final StageType stageType,
+                              final List<StageContainer> previous) {
+            this.candidates = candidates;
+            this.action = action;
+            this.remoteBytes = remoteBytes;
+            this.stageType = stageType;
+            this.previous = previous;
+        }
+
+        public List<StageContainer> getStages() {
+            final List<StageContainer> stageContainers = new ArrayList<>();
+            previous.forEach(stageContainer -> stageContainers.addAll(stageContainer.getStages()));
+            stageContainers.add(0, this);
+            return stageContainers;
+        }
+    }
+
 }

@@ -36,9 +36,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
+import static natalia.dymnikova.cluster.scheduler.impl.FlowHelper.getStageList;
 import static natalia.dymnikova.cluster.scheduler.impl.NamingSchema.remoteFlowControlActorPath;
 
 /**
@@ -61,14 +63,14 @@ public class FlowControlActor extends ActorLogic {
 
     SetFlow flow;
 
-    private Function<FlowControlActor, List<ActorRef>> childrenCreater;
+    private Function<FlowControlActor, List<ActorRef>> childrenCreator;
 
     public FlowControlActor(final ActorAdapter adapter,
                             final SetFlow flow,
-                            final Function<FlowControlActor, List<ActorRef>> childrenCreater) {
+                            final Function<FlowControlActor, List<ActorRef>> childrenCreator) {
         super(adapter);
         this.flow = flow;
-        this.childrenCreater = childrenCreater;
+        this.childrenCreator = childrenCreator;
 
         receive(ReceiveBuilder
                 .match(State.Error.class, this::handle)
@@ -81,10 +83,11 @@ public class FlowControlActor extends ActorLogic {
     @Override
     public SupervisorStrategy supervisorStrategy() {
         return new OneForOneStrategy(SupervisorStrategy.makeDecider(param -> {
+            final String message = param.getClass().getName() + ": " + param.getMessage();
 
-            handle(State.Error.newBuilder()
-                    .setMessage(param.getClass().getName() + " " + param.getMessage())
-                    .build());
+            sendMessageToAll(State.Error.newBuilder().setMessage(message).build());
+            log.error(message, param);
+            handle(State.Error.newBuilder().setMessage(message).build());
 
             return SupervisorStrategy.stop();
         }));
@@ -96,9 +99,14 @@ public class FlowControlActor extends ActorLogic {
 
         log.info("Starting {} at {}", flow.getFlowName(), selfAddress);
 
-        childrenCreater.apply(this).stream()
+        childrenCreator.apply(this).stream()
                 .peek(this::watch)
                 .forEach(activeStages::add);
+    }
+
+    @Override
+    public void postStop() {
+        log.info("Stopped {} : {}", flow.getFlowName(), selfAddress);
     }
 
     public void handle(final Terminated terminated) {
@@ -115,17 +123,16 @@ public class FlowControlActor extends ActorLogic {
 
     public void handle(final Completed completed) {
         sendMessageToAll(completed);
+        stop(self());
     }
 
     public void handle(final State.Error error) {
-        sendMessageToAll(error);
-
         activeStages.forEach(e -> e.tell(error, self()));
     }
 
-    private void sendMessageToAll(final Message error) {
-        flow.getStagesList().stream().filter(this::notSelf).forEach(e ->
-                remoteFlowControlActor(e).tell(error, self())
+    private void sendMessageToAll(final Message message) {
+        getStageList(flow.getStage()).stream().filter(this::notSelf).forEach(e ->
+                remoteFlowControlActor(e).tell(message, self())
         );
     }
 
@@ -136,4 +143,5 @@ public class FlowControlActor extends ActorLogic {
     private boolean notSelf(final Stage stage) {
         return !stage.getAddress().equals(selfAddress);
     }
+
 }

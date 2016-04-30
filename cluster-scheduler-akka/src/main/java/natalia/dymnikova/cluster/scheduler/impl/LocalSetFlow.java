@@ -17,44 +17,40 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
-import rx.Observable.Operator;
 
 import java.io.Serializable;
-import java.util.function.Consumer;
+import java.util.List;
+import java.util.Map.Entry;
+
+import static com.google.protobuf.TextFormat.shortDebugString;
 
 /**
  *
  */
-public class LocalSetFlow<T> implements Serializable {
+public class LocalSetFlow implements Serializable {
 
     private final SetFlow flow;
-    private final Consumer<T> onNext;
-    private final Runnable onComplete;
-    private final Consumer<Throwable> onError;
+    private final List<Entry<Integer, Object>> actions;
 
     public LocalSetFlow(final SetFlow flow,
-                        final Consumer<T> onNext,
-                        final Runnable onComplete,
-                        final Consumer<Throwable> onError) {
+                        final List<Entry<Integer, Object>> actions) {
         this.flow = flow;
-        this.onNext = onNext;
-        this.onComplete = onComplete;
-        this.onError = onError;
+        this.actions = actions;
     }
 
     public SetFlow getFlow() {
         return flow;
     }
 
-    public Runnable getOnComplete() {
-        return onComplete;
+    public Object getAction(final int number) {
+        return actions.get(number);
+    }
+    public List<Entry<Integer, Object>> getActions() {
+        return actions;
     }
 
-    public Consumer<Throwable> getOnError() {
-        return onError;
-    }
-
-    public Consumer<T> getOnNext() {
-        return onNext;
+    @Override
+    public String toString() {
+        return "LocalSetFlow{" + "flow=" + shortDebugString(flow) + '}';
     }
 }

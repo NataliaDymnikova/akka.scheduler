@@ -18,6 +18,7 @@ package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.cluster.Cluster;
 import natalia.dymnikova.cluster.scheduler.Member;
+import natalia.dymnikova.cluster.scheduler.RemoteMergeOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteObservable;
 import natalia.dymnikova.cluster.scheduler.RemoteSupplier;
 import natalia.dymnikova.cluster.scheduler.Scheduler;
@@ -26,14 +27,18 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import rx.Observable;
+import rx.Observable.OnSubscribe;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.UUID;
 
+import static com.google.protobuf.ByteString.EMPTY;
+import static java.lang.String.format;
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Merge;
 import static scala.collection.JavaConversions.asJavaCollection;
 
 /**
@@ -43,6 +48,8 @@ import static scala.collection.JavaConversions.asJavaCollection;
 @Component
 public class AkkaBackedScheduler implements Scheduler {
 
+    private static final AkkaBackedSchedulerThreadCtx ThreadCtx = new AkkaBackedSchedulerThreadCtx();
+
     @Autowired
     private ApplicationContext context;
 
@@ -50,25 +57,64 @@ public class AkkaBackedScheduler implements Scheduler {
     private Cluster cluster;
 
     @Override
+    public <T extends Serializable> RemoteObservable<T> create(final OnSubscribe<T> onSubscribe) {
+        @SuppressWarnings("unchecked")
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(
+                AkkaBackedRemoteObservable.class,
+                makeFlowName(""),
+                ThreadCtx.getCurrentFlowName()
+        );
+
+        return bean.withOnSubscribe(onSubscribe);
+    }
+
+    @Override
     public <T extends Serializable> RemoteObservable<T> createObservable(final RemoteSupplier<Observable<T>> supplier) {
         @SuppressWarnings("unchecked")
-        final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(
+                AkkaBackedRemoteObservable.class,
+                makeFlowName(supplier.getClass()),
+                ThreadCtx.getCurrentFlowName()
+        );
 
         return bean.withSupplierOfObservable(supplier);
     }
 
     @Override
     public <T extends Serializable> RemoteObservable<T> createObservable(final RemoteSupplier<Observable<T>> supplier, final InetSocketAddress address) {
+
         @SuppressWarnings("unchecked")
-        final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(
+                AkkaBackedRemoteObservable.class,
+                makeFlowName(supplier.getClass()),
+                ThreadCtx.getCurrentFlowName()
+        );
 
         return bean.withSupplierOfObservable(supplier, address);
+    }
+
+    private <T extends Serializable> String makeFlowName(final Class<?> supplierClass) {
+        String descriptor = supplierClass.getSimpleName();
+        if (descriptor.endsWith("Supplier")) {
+            descriptor = descriptor.substring(0, descriptor.length() - "Supplier".length());
+        }
+
+        return makeFlowName(descriptor);
+    }
+
+    private String makeFlowName(String descriptor) {
+        final UUID uuid = UUID.randomUUID();
+        return format("%s%016x%016x", descriptor, uuid.getMostSignificantBits(), uuid.getLeastSignificantBits());
     }
 
     @Override
     public <T extends Serializable> RemoteObservable<T> create(final RemoteSupplier<T> supplier) {
         @SuppressWarnings("unchecked")
-        final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(
+                AkkaBackedRemoteObservable.class,
+                makeFlowName(supplier.getClass()),
+                ThreadCtx.getCurrentFlowName()
+        );
 
         return bean.withSupplier(supplier);
     }
@@ -76,7 +122,11 @@ public class AkkaBackedScheduler implements Scheduler {
     @Override
     public <T extends Serializable> RemoteObservable<T> create(final RemoteSupplier<T> supplier, final InetSocketAddress address) {
         @SuppressWarnings("unchecked")
-        final AkkaBackedRemoteObservable<T> bean = context.getBean(AkkaBackedRemoteObservable.class, UUID.randomUUID().toString());
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(
+                AkkaBackedRemoteObservable.class,
+                makeFlowName(supplier.getClass()),
+                ThreadCtx.getCurrentFlowName()
+        );
 
         return bean.withSupplier(supplier, address);
     }
@@ -94,5 +144,18 @@ public class AkkaBackedScheduler implements Scheduler {
                 .filter(member -> member.getRoles().containsAll(asList(roles)))
                 .map(AkkaMember::new)
                 .collect(toList());
+    }
+
+    @Override
+    public <T extends Serializable> RemoteObservable<T> merge(final RemoteMergeOperator<T> merge,
+                                                              final Observable<RemoteObservable<T>> observables) {
+        @SuppressWarnings("unchecked")
+        final AkkaBackedRemoteObservable<T> bean = context.getBean(
+                AkkaBackedRemoteObservable.class,
+                makeFlowName(merge.getClass()),
+                ThreadCtx.getCurrentFlowName()
+        );
+
+        return bean.withMerge(merge, observables);
     }
 }

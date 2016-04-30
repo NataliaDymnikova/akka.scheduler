@@ -20,6 +20,8 @@ import akka.actor.ActorSelection;
 import natalia.dymnikova.cluster.ActorAdapter;
 import natalia.dymnikova.cluster.scheduler.RemoteSupplier;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
+import natalia.dymnikova.cluster.scheduler.akka.Flow.OnStart;
+import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import natalia.dymnikova.test.TestActorRef;
 import natalia.dymnikova.util.AutowireHelper;
 import org.junit.Before;
@@ -34,7 +36,6 @@ import rx.functions.Action0;
 import rx.functions.Action1;
 import rx.subjects.PublishSubject;
 
-import static natalia.dymnikova.cluster.scheduler.akka.Flow.OnStart.newBuilder;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 import static org.junit.Assert.assertNotNull;
 import static org.mockito.Matchers.any;
@@ -50,7 +51,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 /**
- * 
+ *
  */
 @RunWith(MockitoJUnitRunner.class)
 public class StartStageActorTest {
@@ -58,9 +59,7 @@ public class StartStageActorTest {
     private final Codec codec = spy(Codec.class);
 
     @SuppressWarnings("Convert2Lambda")
-    private final Flow.Stage stage = Flow.Stage.newBuilder()
-            .setOperator(wrap(codec.pack(new TestRemoteSupplier())))
-            .build();
+    private final TestRemoteSupplier stage = new TestRemoteSupplier();
 
     private final ActorSelection nextActor = mock(ActorSelection.class);
 
@@ -70,7 +69,12 @@ public class StartStageActorTest {
     private AutowireHelper autowireHelper;
 
     @InjectMocks
-    private final StartStageActor stageActor = new StartStageActor(adapter, nextActor, stage);
+    private final StartStageActor stageActor = new StartStageActor(
+            adapter,
+            nextActor,
+            SetFlow.getDefaultInstance(),
+            stage
+    );
 
     @Spy
     private TestActorRef parent;
@@ -102,7 +106,7 @@ public class StartStageActorTest {
         TestRemoteSupplier.observable = Observable.just("test")
                 .doOnSubscribe(action);
 
-        stageActor.handle(newBuilder().setCount(0).build());
+        stageActor.handle(OnStart.newBuilder().setCount(0).build());
         verify(action).call();
     }
 
@@ -111,7 +115,7 @@ public class StartStageActorTest {
         final PublishSubject<Object> subject = PublishSubject.create();
         TestRemoteSupplier.observable = subject;
 
-        stageActor.handle(newBuilder().setCount(0).build());
+        stageActor.handle(OnStart.newBuilder().setCount(0).build());
 
         verify(nextActor, never()).tell(any(), any());
     }
@@ -121,7 +125,7 @@ public class StartStageActorTest {
         final PublishSubject<Object> subject = PublishSubject.create();
         TestRemoteSupplier.observable = subject;
 
-        stageActor.handle(newBuilder().setCount(1).build());
+        stageActor.handle(OnStart.newBuilder().setCount(1).build());
 
         subject.onNext("firstMessage");
 
@@ -135,7 +139,7 @@ public class StartStageActorTest {
         TestRemoteSupplier.observable = Observable.just("test")
                 .doOnRequest(onRequest);
 
-        stageActor.handle(newBuilder().setCount(0).build());
+        stageActor.handle(OnStart.newBuilder().setCount(0).build());
 
         reset(onRequest);
         stageActor.handle(Flow.More.newBuilder().setCount(1).build());
@@ -148,7 +152,7 @@ public class StartStageActorTest {
         final PublishSubject<Object> subject = PublishSubject.create();
         TestRemoteSupplier.observable = subject;
 
-        stageActor.handle(newBuilder().setCount(1).build());
+        stageActor.handle(OnStart.newBuilder().setCount(1).build());
 
         subject.onCompleted();
         verify(nextActor).tell(eq(Flow.Completed.getDefaultInstance()), any());
@@ -159,12 +163,30 @@ public class StartStageActorTest {
         final PublishSubject<Object> subject = PublishSubject.create();
         TestRemoteSupplier.observable = subject;
 
-        stageActor.handle(newBuilder().setCount(1).build());
+        stageActor.handle(OnStart.newBuilder().setCount(1).build());
 
         subject.onError(new Throwable("error"));
         verify(self).tell(isA(SubscriberWithMore.HandleException.class), same(self));
     }
 
+    @Test
+    public void shouldThrowExceptionWhenGetErrorMessage() throws Exception {
+        final PublishSubject<Object> subject = PublishSubject.create();
+        TestRemoteSupplier.observable = subject;
+
+        stageActor.handle(OnStart.newBuilder().setCount(0).build());
+
+        stageActor.handle(Flow.State.Error.newBuilder().setMessage("Expected").build());
+        verify(self).tell(isA(Exception.class), eq(self));
+    }
+
+    @Test
+    public void shouldSendErrorMessageToSelfWhenSubscriberIsNull() throws Exception {
+        final PublishSubject<Object> subject = PublishSubject.create();
+        TestRemoteSupplier.observable = subject;
+        stageActor.handle(Flow.State.Error.newBuilder().setMessage("Expected").build());
+        verify(self).tell(isA(Exception.class), eq(self));
+    }
 
     private static class TestRemoteSupplier implements RemoteSupplier<Observable<String>> {
         static Observable observable;

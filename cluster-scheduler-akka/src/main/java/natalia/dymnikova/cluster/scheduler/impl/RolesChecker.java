@@ -26,12 +26,19 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.annotation.ScannedGenericBeanDefinition;
 import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
+import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.core.type.filter.TypeFilter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -53,6 +60,22 @@ public class RolesChecker {
 
     @ConfigValue("natalia-dymnikova.scheduler.base-package")
     private String basePackage = "natalia.dymnikova";
+
+    private ResourcePatternResolver resourcePatternResolver = new PathMatchingResourcePatternResolver();
+
+    private CachingMetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resourcePatternResolver);
+
+
+    public RolesChecker() {
+        metadataReaderFactory.setCacheLimit(4048);
+    }
+
+    private final StandardEnvironment scannerEnvironment = new StandardEnvironment() {
+        @Override
+        protected boolean isProfileActive(final String profile) {
+            return true;
+        }
+    };
 
     public boolean check(final Remote operator, final Set<String> roles) {
         if (operator instanceof RemoteOperatorImpl) {
@@ -104,18 +127,18 @@ public class RolesChecker {
         final ArrayList<Set<ScannedGenericBeanDefinition>> sets = new ArrayList<>(filters.size());
 
         final ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(
-                false,
-                new StandardEnvironment() {
-                    @Override
-                    protected boolean isProfileActive(final String profile) {
-                        return true;
-                    }
-                }
+                false, scannerEnvironment
         );
 
-        for (final TypeFilter filter : filters) {
+        scanner.setResourceLoader(resourcePatternResolver);
+        scanner.setMetadataReaderFactory(metadataReaderFactory);
+
+        for (final TypeFilter filter: filters) {
             scanner.resetFilters(false);
-            scanner.addIncludeFilter(filter);
+            scanner.addIncludeFilter(new CompositeFilter(
+                    new AnnotationTypeFilter(Component.class),
+                    filter
+            ));
 
             final Set<BeanDefinition> candidateComponents = scanner.findCandidateComponents(
                     basePackage
@@ -134,4 +157,22 @@ public class RolesChecker {
         return sets;
     }
 
+    private static class CompositeFilter implements TypeFilter {
+
+        private final TypeFilter[] filters;
+
+        public CompositeFilter(final TypeFilter ...filters) {
+            this.filters = filters;
+        }
+
+        @Override
+        public boolean match(MetadataReader metadataReader, MetadataReaderFactory metadataReaderFactory) throws IOException {
+            for (final TypeFilter filter : filters) {
+                if (!filter.match(metadataReader, metadataReaderFactory)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
 }

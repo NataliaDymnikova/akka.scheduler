@@ -24,6 +24,7 @@ import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static akka.actor.ActorPaths.fromString;
 import static akka.actor.AddressFromURIString.apply;
 import static java.lang.String.format;
+import static natalia.dymnikova.cluster.scheduler.impl.FlowHelper.getStage;
 
 /**
  * 
@@ -31,7 +32,7 @@ import static java.lang.String.format;
 public class NamingSchema {
 
     public static ActorPath remoteFlowControlActorPath(final SetFlow flow, final int stageIndex) {
-        return remoteFlowControlActorPath(flow, flow.getStagesList().get(stageIndex).getAddress());
+        return remoteFlowControlActorPath(flow, getStage(flow, stageIndex).getAddress());
     }
 
     public static ActorPath remoteFlowControlActorPath(final SetFlow flow, final String addressStr) {

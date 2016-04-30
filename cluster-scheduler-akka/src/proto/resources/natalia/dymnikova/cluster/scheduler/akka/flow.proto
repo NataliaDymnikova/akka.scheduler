@@ -17,30 +17,48 @@
 syntax = "proto3";
 package natalia.dymnikova.cluster.scheduler.akka;
 
+enum MemberCheckResultVerdict {
+              Ok                                     = 0;
+              NotConcluded                           = 1;
+              Veto                                   = 2;
+}
+
+message MemberCheckResult {
+             MemberCheckResultVerdict verdict        = 1;
+             string                   message        = 2;
+             string                   type           = 3;
+}
+
+
 message SetFlow {
-    string               flowName   = 1;
-    repeated  Stage      stages     = 2;
+             string                   flowName       = 1;
+             Stage                    stage          = 2;
+             string                   parentFlowName = 3;
 }
 
 enum StageType {
-    NotSet     = 0;
-    Supplier   = 1;
-    Operator   = 2;
+             NotSet                                  = 0;
+             Supplier                                = 1;
+             Operator                                = 2;
+             Local                                   = 3;
+             Merge                                   = 4;
 }
 
 message Stage {
-    bytes     operator = 1;
-    string    address  = 2;
-    StageType type     = 3;
+             bytes                    operator       = 1;
+             string                   address        = 2;
+             StageType                type           = 3;
+    repeated Stage                    stages         = 4;
+             uint32                   id             = 5;
 }
 
 message CheckFlow {
-    bytes   operator  = 3;
+             bytes                    operator       = 1;
 }
 
 message State {
     message Error {
-        string message = 1;
+            string                    message        = 1;
     }
 
     message Ok {
@@ -52,13 +70,13 @@ message Completed {}
 message IsReady {}
 
 message OnStart {
-    uint64 count = 1;
+             uint64                   count          = 1;
 }
 
 message Data {
-    bytes  data  = 1;
+             bytes                    data           = 1;
 }
 
 message More {
-    uint64 count = 1;
+             uint64                   count          = 1;
 }

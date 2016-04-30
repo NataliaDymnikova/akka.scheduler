@@ -26,7 +26,7 @@ import scala.concurrent.Future;
 import scala.runtime.BoxedUnit;
 
 import java.io.Serializable;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
@@ -36,6 +36,8 @@ public interface ActorAdapter {
     void receive(final PartialFunction<Object, BoxedUnit> receive);
 
     void forward(final ActorRef actorRef, final Object msg);
+
+    void forward(final ActorSelection selection, final Object msg);
 
     ActorRef self();
 
@@ -47,7 +49,7 @@ public interface ActorAdapter {
 
     void reply(Supplier<Object> supplier);
 
-    void watch(ActorRef actorRef);
+    ActorRef watch(ActorRef actorRef);
 
     void unwatch(ActorRef actorRef);
 
@@ -61,9 +63,13 @@ public interface ActorAdapter {
 
     ActorRef actorOf(final Props props);
 
+    Optional<ActorRef> child(String name);
+
+    Iterable<ActorRef> children();
+
     ActorRef actorOf(final Props props, final String name);
 
     String actorSystemName();
 
-    Scheduler scheduler();
+    SchedulerService scheduler();
 }

@@ -16,24 +16,18 @@
 
 package natalia.dymnikova.configuration;
 
-import com.google.common.collect.ImmutableMap;
-import com.typesafe.config.*;
+import com.typesafe.config.Config;
+import com.typesafe.config.ConfigException;
+import com.typesafe.config.ConfigFactory;
+import com.typesafe.config.ConfigObject;
+import com.typesafe.config.ConfigValueType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.env.StandardEnvironment;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Supplier;
-
-import static com.typesafe.config.ConfigValueFactory.fromAnyRef;
-import static com.typesafe.config.ConfigValueFactory.fromIterable;
-import static java.lang.String.join;
 
 /**
  * 

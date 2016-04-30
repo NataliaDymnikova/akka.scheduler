@@ -21,20 +21,22 @@ import akka.actor.Address;
 import akka.actor.AddressFromURIString;
 import natalia.dymnikova.cluster.ActorSystemAdapter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.AbstractMap;
 import java.util.List;
 import java.util.Map.Entry;
 
-import static akka.actor.AddressFromURIString.apply;
 import static java.util.stream.Collectors.toList;
 import static natalia.dymnikova.cluster.ActorPaths.computePool;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
+import static natalia.dymnikova.cluster.scheduler.impl.FlowHelper.getStageList;
 
 /**
  */
+@Lazy
 @Component
 public class SetFlowDestinationFactory {
 
@@ -42,11 +44,12 @@ public class SetFlowDestinationFactory {
     private ActorSystemAdapter adapter;
 
     public List<Entry<ActorSelection, Address>> buildDestinations(final SetFlow flow) {
-        return flow.getStagesList().stream()
+        return getStageList(flow.getStage()).stream()
                 .map(Stage::getAddress)
                 .distinct()
                 .map(AddressFromURIString::apply)
                 .map(address -> new AbstractMap.SimpleEntry<>(adapter.actorSelection(computePool(address)), address))
                 .collect(toList());
     }
+
 }

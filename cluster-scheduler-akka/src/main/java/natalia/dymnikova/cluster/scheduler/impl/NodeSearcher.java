@@ -20,10 +20,12 @@ import akka.actor.Address;
 import akka.cluster.Cluster;
 import akka.cluster.Member;
 import akka.util.Timeout;
+import com.google.protobuf.TextFormat;
 import natalia.dymnikova.cluster.ActorSystemAdapter;
 import natalia.dymnikova.cluster.scheduler.Remote;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.akka.Flow.CheckFlow;
+import natalia.dymnikova.util.MoreLogging;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,11 +40,13 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import static com.google.protobuf.TextFormat.shortDebugString;
 import static natalia.dymnikova.cluster.ActorPaths.computePool;
 import static natalia.dymnikova.cluster.util.ScalaToJava.toJava;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 import static natalia.dymnikova.util.MoreFutures.allOf;
 import static natalia.dymnikova.util.MoreFutures.immediateFailedFuture;
+import static natalia.dymnikova.util.MoreLogging.lazyDebugString;
 
 /**
  *
@@ -80,20 +84,26 @@ public class NodeSearcher {
         @SuppressWarnings("unchecked")
         final CompletableFuture<Optional<Address>>[] futures = members
                 .stream()
+                .filter(member -> member.hasRole("compute"))
                 .filter(member -> checker.check(operator, member.getRoles()))
                 .map(m -> computePool(m.address()))
-                .map(actorPath -> toJava(adapter.ask(adapter.actorSelection(actorPath), msg, timeout))
-                        .thenApply(o -> {
-                            if (o instanceof Flow.State.Ok) {
-                                return Optional.of(actorPath.address());
-                            } else {
-                                return Optional.empty();
-                            }
-                        })
-                        .exceptionally(t -> {
-                            log.error(t.getMessage(), t);
-                            return Optional.empty();
-                        })
+                .map(actorPath -> {
+                            log.debug("Message: {} to {}", lazyDebugString(msg), actorPath);
+                            return toJava(adapter.ask(adapter.actorSelection(actorPath), msg, timeout))
+                                    .thenApply(o -> {
+                                        log.debug("actor: {} answer: {}", actorPath, o.getClass().getName());
+                                        if (o instanceof Flow.State.Ok) {
+                                            return Optional.of(actorPath.address());
+                                        } else {
+                                            return Optional.empty();
+                                        }
+                                    })
+                                    .exceptionally(t -> {
+                                        log.error("Exception happened when sending {} to {}",
+                                                lazyDebugString(msg), actorPath, t);
+                                        return Optional.empty();
+                                    });
+                        }
                 ).toArray(CompletableFuture[]::new);
 
         return allOf(futures);

@@ -18,11 +18,10 @@ package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
-import com.google.protobuf.ByteString;
 import natalia.dymnikova.cluster.ActorAdapter;
-import natalia.dymnikova.cluster.scheduler.RemoteOperator;
 import natalia.dymnikova.cluster.scheduler.RemoteStageException;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
+import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import natalia.dymnikova.cluster.scheduler.impl.SubscriberWithMore.HandleException;
 import natalia.dymnikova.test.TestActorRef;
 import org.junit.Before;
@@ -32,12 +31,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
+import rx.Observable.Operator;
 import rx.Subscriber;
 import scala.PartialFunction;
 import scala.runtime.BoxedUnit;
 
 import java.io.Serializable;
 
+import static java.util.Optional.of;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Matchers.any;
@@ -55,7 +56,9 @@ import static org.mockito.Mockito.verify;
  */
 @RunWith(MockitoJUnitRunner.class)
 public class IntermediateStageActorTest {
+
     private final Codec codec = spy(Codec.class);
+
     private final SubscriberWithMore subscriberWithMore = new SubscriberWithMore() {
         @Override
         public void onCompleted() {
@@ -94,8 +97,9 @@ public class IntermediateStageActorTest {
     private final IntermediateStageActor stageActor = new IntermediateStageActor(
             adapter,
             firstStage,
-            thirdStage,
+            of(thirdStage),
             operator,
+            SetFlow.getDefaultInstance(),
             outSubscriberFactory
     );
 
@@ -198,7 +202,7 @@ public class IntermediateStageActorTest {
         verify(operator).setSelf(same(self));
     }
 
-    private class TestRemoteOperator implements RemoteOperator<Serializable, Serializable>, SelfAware {
+    private class TestRemoteOperator implements Operator<Serializable, Serializable>, SelfAware {
         private ActorRef self;
 
         @Override

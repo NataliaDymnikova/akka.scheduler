@@ -1,5 +1,6 @@
 dependencies {
     compile libraries.akka
+    compile libraries.humanize
     compile project(":configuration")
     compile project(":common")
 }

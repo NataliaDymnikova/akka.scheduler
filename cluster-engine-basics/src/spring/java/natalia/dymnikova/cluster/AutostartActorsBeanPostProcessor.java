@@ -27,6 +27,9 @@ import org.springframework.stereotype.Component;
 
 import javax.util.streamex.StreamEx;
 
+import static java.lang.System.nanoTime;
+import static java.time.Duration.ofNanos;
+
 /**
  * 
  */
@@ -46,15 +49,24 @@ public class AutostartActorsBeanPostProcessor {
     @EventListener(ContextStartedEvent.class)
     public void onStart(final ContextStartedEvent event) {
         if (event.getApplicationContext() == applicationContext) {
-            StreamEx.<String>of(applicationContext.getBeanNamesForAnnotation(
-                    AutostartActor.class
-            )).map(applicationContext::getType)
-                    .filter(ActorLogic.class::isAssignableFrom)
-                    .mapToEntry(type -> (Class<? extends ActorLogic>) type, type -> type.getAnnotation(AutostartActor.class))
-                    .peek(e -> log.debug("Discovered autostart actor {}", e.getKey().getName()))
-                    .mapToValue((type, annotation) -> annotation.value())
-                    .mapToValue((type, path) -> actorSystem.actorOf(extension.props(type), path))
-                    .forKeyValue((type, ref) -> log.info("Started actor {} of type {}", ref.path(), type.getName()));
+            final long start = nanoTime();
+            try {
+                startActors();
+            } finally {
+                log.warn("Autostart actors started in {} sec", ofNanos(nanoTime() - start).getSeconds());
+            }
         }
+    }
+
+    private void startActors() {
+        StreamEx.<String>of(applicationContext.getBeanNamesForAnnotation(
+                AutostartActor.class
+        )).map(applicationContext::getType)
+                .filter(ActorLogic.class::isAssignableFrom)
+                .mapToEntry(type -> (Class<? extends ActorLogic>) type, type -> type.getAnnotation(AutostartActor.class))
+                .peek(e -> log.debug("Discovered autostart actor {}", e.getKey().getName()))
+                .mapToValue((type, annotation) -> annotation.value())
+                .mapToValue((type, path) -> actorSystem.actorOf(extension.props(type), path))
+                .forKeyValue((type, ref) -> log.info("Started actor {} of type {}", ref.path(), type.getName()));
     }
 }

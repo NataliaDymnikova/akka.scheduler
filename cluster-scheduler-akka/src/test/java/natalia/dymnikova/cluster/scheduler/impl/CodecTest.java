@@ -140,14 +140,14 @@ public class CodecTest {
             }
         });
 
-        assertThat(deserialize(body), instanceOf(Operator.class));
+        assertThat(deserialize(body), instanceOf(RemoteOperator.class));
     }
 
     @Test
     public void shouldPackLambdaOperator() throws Exception {
         final byte[] body = codec.pack((RemoteOperator<String, String>) subscriber -> subscriber);
 
-        assertThat(deserialize(body), instanceOf(Operator.class));
+        assertThat(deserialize(body), instanceOf(RemoteOperator.class));
     }
 
     private static String staticSuipplyMethod() {

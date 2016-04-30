@@ -18,18 +18,23 @@ package natalia.dymnikova.configuration;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigMemorySize;
-import natalia.dymnikova.util.MoreThrowables;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.stereotype.Component;
+import org.springframework.util.ReflectionUtils;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.List;
 
 import static java.util.Arrays.stream;
 import static natalia.dymnikova.util.MoreThrowables.unchecked;
 import static org.springframework.util.ClassUtils.getUserClass;
-import static org.springframework.util.ReflectionUtils.makeAccessible;
 import static org.springframework.util.ReflectionUtils.setField;
 
 /**
@@ -43,42 +48,54 @@ public class ConfigBeanPostProcessor implements BeanPostProcessor {
 
     @Override
     public Object postProcessBeforeInitialization(final Object bean, final String beanName) throws BeansException {
-        stream(getUserClass(bean.getClass()).getDeclaredFields())
-            .filter(f -> f.getAnnotation(ConfigValue.class) != null)
-            .map(f -> {
-                makeAccessible(f);
-                return f;
-            })
-            .forEach(field -> {
-                final String path = field.getAnnotation(ConfigValue.class).value();
-                try {
-                    setField(
-                        field,
-                        bean,
-                        convert(
-                            field.getType(), environment.config, path
-                        )
-                    );
-                } catch (final com.typesafe.config.ConfigException e) {
-                    throw unchecked(
-                        e,
-                        "Failed to apply configuration '{}' to property '{}' of bean '{}' of type {}",
-                        path,
-                        field.getName(),
-                        beanName,
-                        bean.getClass().getName()
-                    );
-                }
+        Class<?> currentClass = getUserClass(bean.getClass());
 
-            });
+        while (currentClass != null && currentClass != Object.class) {
+            stream(currentClass.getDeclaredFields())
+                .filter(f -> f.getAnnotation(ConfigValue.class) != null)
+                .map(this::makeAccessible)
+                .forEach(field -> injectConfiguration(bean, beanName, field));
+
+            currentClass = currentClass.getSuperclass();
+        }
 
         return bean;
     }
 
-    private Object convert(final Class<?> targetType,
+    private void injectConfiguration(Object bean, String beanName, Field field) {
+        final String path = field.getAnnotation(ConfigValue.class).value();
+        try {
+            setField(
+                field,
+                bean,
+                convert(
+                    field.getGenericType(), environment.config, path
+                )
+            );
+        } catch (final com.typesafe.config.ConfigException e) {
+            throw unchecked(
+                e,
+                "Failed to apply configuration '{}' to property '{}' of bean '{}' of type {}",
+                path,
+                field.getName(),
+                beanName,
+                bean.getClass().getName()
+            );
+        }
+    }
+
+    private Field makeAccessible(Field f) {
+        ReflectionUtils.makeAccessible(f);
+        return f;
+    }
+
+    private Object convert(final Type targetType,
                            final Config config,
                            final String path) {
         if (targetType == Config.class) {
+            if (path.length() == 0) {
+                return config;
+            }
             return config.getConfig(path);
         } else if (targetType == int.class || targetType == Integer.class) {
             return config.getInt(path);
@@ -94,6 +111,19 @@ public class ConfigBeanPostProcessor implements BeanPostProcessor {
             return config.getDuration(path);
         } else if (targetType == ConfigMemorySize.class) {
             return config.getMemorySize(path);
+        } else if (targetType == Path.class) {
+            return Paths.get(config.getString(path));
+        } else if (targetType == List.class) {
+            final Type type = ((ParameterizedType) targetType).getActualTypeArguments()[0];
+            if (type == String.class) {
+                return config.getStringList(path);
+            } else if (type == Long.class) {
+                return config.getLongList(path);
+            } else if (type == Integer.class) {
+                return config.getIntList(path);
+            } else {
+                throw new UnsupportedOperationException("Unsupported type of a List field " + type.getTypeName());
+            }
         } else {
             return config.getValue(path).unwrapped();
         }

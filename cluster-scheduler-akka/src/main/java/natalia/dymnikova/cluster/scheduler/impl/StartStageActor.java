@@ -23,7 +23,9 @@ import natalia.dymnikova.cluster.Actor;
 import natalia.dymnikova.cluster.ActorAdapter;
 import natalia.dymnikova.cluster.ActorLogic;
 import natalia.dymnikova.cluster.SpringAkkaExtensionId;
+import natalia.dymnikova.cluster.scheduler.RemoteStageException;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
+import natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import natalia.dymnikova.cluster.scheduler.impl.SubscriberWithMore.HandleException;
 import natalia.dymnikova.util.AutowireHelper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,7 +42,6 @@ import static java.util.Optional.of;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.IsReady;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.More;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.OnStart;
-import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.State;
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 
@@ -50,6 +51,8 @@ import static natalia.dymnikova.util.MoreByteStrings.wrap;
 @Actor
 public class StartStageActor extends ActorLogic {
 
+    private static final AkkaBackedSchedulerThreadCtx ThreadCtx = new AkkaBackedSchedulerThreadCtx();
+
     @Autowired
     private Codec codec;
 
@@ -57,34 +60,41 @@ public class StartStageActor extends ActorLogic {
     private AutowireHelper autowireHelper;
 
     private final ActorSelection nextActor;
-    private Stage stage;
+    private String flowName;
 
     private SubscriberWithMore outSubscriber;
     private Optional<Subscription> subscription = empty();
 
+    private final Supplier<?> observableSupplier;
+
     public static Props props(final SpringAkkaExtensionId.AkkaExtension extension,
                               final ActorSelection nextActor,
-                              final Stage stage) {
+                              final SetFlow flow,
+                              final Supplier<?> observableSupplier) {
         return extension.props(
                 StartStageActor.class,
                 nextActor,
-                stage
+                flow,
+                observableSupplier
         );
     }
 
     public StartStageActor(final ActorAdapter adapter,
                            final ActorSelection nextActor,
-                           final Stage stage) {
+                           final SetFlow flow,
+                           final Supplier<?> observableSupplier) {
         super(adapter);
 
         this.nextActor = nextActor;
-        this.stage = stage;
+        this.observableSupplier = observableSupplier;
+        this.flowName = flow.getFlowName();
 
         receive(ReceiveBuilder
                 .match(More.class, this::handle)
                 .match(IsReady.class, this::handle)
                 .match(HandleException.class, this::handle)
                 .match(OnStart.class, this::handle)
+                .match(State.Error.class, this::handle)
                 .build());
 
     }
@@ -99,12 +109,8 @@ public class StartStageActor extends ActorLogic {
     }
 
     public void handle(final OnStart onStart) {
-        final Supplier<Observable<Serializable>> observableSupplier = autowireHelper.autowire(codec.unpackSupplier(
-                stage.getOperator().toByteArray()
-        ));
-
         final Observable<Serializable> inObservable;
-        final Object o = observableSupplier.get();
+        final Object o = ThreadCtx.withFlow(flowName, observableSupplier::get);
 
         if (o instanceof Observable) {
             inObservable = (Observable<Serializable>) o;
@@ -134,16 +140,24 @@ public class StartStageActor extends ActorLogic {
             }
         };
 
-        subscription = of(inObservable.subscribe(outSubscriber));
+        subscription = ThreadCtx.withFlow(flowName, () -> of(inObservable.subscribe(outSubscriber)));
     }
 
-    void handle(final More more) {
+    public void handle(final More more) {
         checkNotNull(outSubscriber, "More Received before OnStart!");
         outSubscriber.more(more.getCount());
     }
 
     public void handle(final IsReady ready) {
         sender().tell(State.Ok.getDefaultInstance(), self());
+    }
+
+    public void handle(final State.Error error) {
+        if (outSubscriber == null) {
+            ThreadCtx.withFlow(flowName, () -> self().tell(new HandleException(new RemoteStageException(error.getMessage())), self()));
+        } else {
+            ThreadCtx.withFlow(flowName, () -> outSubscriber.onError(new RemoteStageException(error.getMessage())));
+        }
     }
 
 }

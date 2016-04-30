@@ -19,6 +19,7 @@ package natalia.dymnikova.cluster.scheduler.impl;
 import akka.actor.Address;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.StageContainer;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -28,42 +29,75 @@ import java.util.Optional;
 import static java.util.stream.Collectors.toList;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
+import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Merge;
 import static natalia.dymnikova.util.MoreFutures.getUncheckedNow;
 
 /**
  *
  */
+@Lazy
 @Component
 public class SetFlowFactory {
 
     @Autowired
     private GetAddressStrategyFactory strategyFactory;
 
-    public SetFlow makeFlow(final String flowName, final List<StageContainer> resolvedStages) {
+    @Autowired
+    private FlowMerger flowMerger;
+
+    public SetFlow makeFlow(final String flowName,
+                            final Optional<String> parentFlowName,
+                            final List<StageContainer> resolvedStages) {
         final GetAddressesStrategy strategy = strategyFactory.getAddressStrategy();
         final SetFlow.Builder flow = SetFlow.newBuilder()
                 .setFlowName(flowName);
+        parentFlowName.ifPresent(flow::setParentFlowName);
 
         final List<Optional<Address>> addresses = strategy.getNodes(
                 resolvedStages.stream()
-                        .map(stageContainer -> getUncheckedNow(stageContainer.candidates).stream()
+                        .map(stageContainer -> stageContainer.candidates.stream()
                                 .filter(Optional::isPresent)
-                                .map(Optional::get).collect(toList()))
+                                .map(Optional::get)
+                                .collect(toList()))
                         .collect(toList())
         );
 
-        for (int i = 0; i < addresses.size(); i++) {
-            final StageContainer stageContainer = resolvedStages.get(i);
-            addresses.get(i).map(address -> flow.addStages(Stage.newBuilder()
-                    .setOperator(stageContainer.remoteBytes)
-                    .setAddress(address.toString())
-                    .setType(stageContainer.stageType)
-                    .build())
-            ).orElseThrow(() ->
-                    new NoSuchElementException("No candidate for stage " + stageContainer.remote)
-            );
-        }
 
+        flow.setStage(makeStages(resolvedStages, addresses, 0));
         return flow.build();
+    }
+
+    private Stage makeStages(final List<StageContainer> resolvedStages,
+                             final List<Optional<Address>> addresses,
+                             final int i) {
+        final StageContainer stageContainer = resolvedStages.get(i);
+        final Optional<Address> currAddress = addresses.get(i);
+        final List<Stage> children = stageContainer.previous.stream()
+                .map(stage -> makeStages(resolvedStages, addresses, stage.id))
+                .collect(toList());
+        return currAddress.map(address -> {
+            if (stageContainer.stageType == Merge) {
+                return flowMerger.createMergeStages(
+                        children,
+                        stageContainer,
+                        previousStageContainerAddress(resolvedStages, stageContainer, addresses)
+                );
+            }
+
+            return Stage.newBuilder()
+                    .setOperator(stageContainer.remoteBytes)
+                    .setAddress(currAddress.get().toString())
+                    .setType(stageContainer.stageType)
+                    .setId(stageContainer.id)
+                    .addAllStages(children)
+                    .build();
+
+        }).orElseThrow(() -> new NoSuchElementException("No candidate for stage " + stageContainer.action));
+    }
+
+    private Optional<Address> previousStageContainerAddress(final List<StageContainer> resolvedStages, final StageContainer stageContainer, final List<Optional<Address>> address) {
+        return address.get(resolvedStages.indexOf(resolvedStages.stream()
+                .filter(stage -> stage.previous.contains(stageContainer))
+                .findFirst().get()));
     }
 }

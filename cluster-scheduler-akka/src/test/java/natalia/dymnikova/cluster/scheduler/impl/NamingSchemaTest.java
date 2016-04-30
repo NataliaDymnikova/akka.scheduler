@@ -37,7 +37,7 @@ public class NamingSchemaTest {
     public void shouldComputeRemoteFlowControlActorPath() throws Exception {
         assertThat(
                 remoteFlowControlActorPath(flow, 0).toString(),
-                is("akka://system@host0:0/user/compute-pool/test-flow")
+                is("akka://system@host2:0/user/compute-pool/test-flow")
         );
     }
 
@@ -53,7 +53,7 @@ public class NamingSchemaTest {
     public void shouldComputeRemoteFlowControlActorPathForThirdHost() throws Exception {
         assertThat(
                 remoteFlowControlActorPath(flow, 2).toString(),
-                is("akka://system@host2:0/user/compute-pool/test-flow")
+                is("akka://system@host0:0/user/compute-pool/test-flow")
         );
     }
 
@@ -68,7 +68,7 @@ public class NamingSchemaTest {
     public void shouldComputeRemoteStageActorPath() throws Exception {
         assertThat(
                 remoteStageActorPath(flow, 0).toString(),
-                is("akka://system@host0:0/user/compute-pool/test-flow/000")
+                is("akka://system@host2:0/user/compute-pool/test-flow/000")
         );
     }
 
@@ -84,7 +84,7 @@ public class NamingSchemaTest {
     public void shouldComputeRemoteStageActorPathForThird() throws Exception {
         assertThat(
                 remoteStageActorPath(flow, 2).toString(),
-                is("akka://system@host2:0/user/compute-pool/test-flow/002")
+                is("akka://system@host0:0/user/compute-pool/test-flow/002")
         );
     }
 }

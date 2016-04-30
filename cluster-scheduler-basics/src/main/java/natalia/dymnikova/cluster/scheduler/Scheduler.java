@@ -17,18 +17,25 @@
 package natalia.dymnikova.cluster.scheduler;
 
 import rx.Observable;
+import rx.Observable.OnSubscribe;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.List;
+
+import static rx.Observable.from;
 
 /**
  *
  */
 public interface Scheduler {
     default <T extends Serializable> RemoteObservable<T> empty() {
+        // TODO
         return null;
     }
+
+    <T extends Serializable> RemoteObservable<T> create(final OnSubscribe<T> onSubscribe);
+
 
     /**
      * Creates {@code RemoteObservable} with an {@code Observable} returned by provided {@code supplier} as a source of values
@@ -57,5 +64,13 @@ public interface Scheduler {
     List<Member> getMembers();
 
     List<Member> getMembersWithRoles(final String... roles);
+
+    <T extends Serializable> RemoteObservable<T> merge(final RemoteMergeOperator<T> merge,
+                                                       final Observable<RemoteObservable<T>> observables);
+
+    default <T extends Serializable> RemoteObservable<T> merge(final RemoteMergeOperator<T> merge,
+                                                               final List<RemoteObservable<T>> observables) {
+        return merge(merge, from(observables));
+    }
 
 }

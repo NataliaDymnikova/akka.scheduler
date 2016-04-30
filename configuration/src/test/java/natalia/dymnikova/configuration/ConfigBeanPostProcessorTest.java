@@ -24,6 +24,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 
 import static com.typesafe.config.ConfigValueFactory.fromAnyRef;
@@ -34,7 +36,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertThat;
 
 /**
- * 
+ *
  */
 public class ConfigBeanPostProcessorTest {
 
@@ -67,6 +69,9 @@ public class ConfigBeanPostProcessorTest {
 
         @ConfigValue("test-config.memSize")
         private ConfigMemorySize memorySize;
+
+        @ConfigValue("test-config.path")
+        private Path path;
     }
 
     private final ConfigBeanPostProcessor processor = new ConfigBeanPostProcessor() {{
@@ -78,6 +83,7 @@ public class ConfigBeanPostProcessorTest {
                 .withValue("test-config.duration", fromAnyRef("5 s"))
                 .withValue("test-config.memSize", fromAnyRef("5 M"))
                 .withValue("akka.cluster.roles", fromIterable(emptyList()))
+                .withValue("test-config.path", fromAnyRef("./test/config"))
         );
 
         log.info("{}", environment.config.root().render(ConfigRenderOptions.concise().setJson(false).setFormatted(true).setOriginComments(false)));
@@ -152,6 +158,14 @@ public class ConfigBeanPostProcessorTest {
         final TestBean bean = (TestBean) processor.postProcessBeforeInitialization(new TestBean(), null);
         assertThat(
             bean.anIntAsString, is("1")
+        );
+    }
+
+    @Test
+    public void shouldPopulatePathFied() throws Exception {
+        final TestBean bean = (TestBean) processor.postProcessBeforeInitialization(new TestBean(), null);
+        assertThat(
+                bean.path, is(Paths.get("./test/config"))
         );
     }
 }

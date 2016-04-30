@@ -19,7 +19,7 @@ package natalia.dymnikova.cluster.scheduler.impl;
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
 import natalia.dymnikova.cluster.ActorAdapter;
-import natalia.dymnikova.cluster.Scheduler;
+import natalia.dymnikova.cluster.SchedulerService;
 import natalia.dymnikova.cluster.scheduler.StagesUnready;
 import natalia.dymnikova.cluster.scheduler.akka.Flow;
 import natalia.dymnikova.cluster.scheduler.impl.StartingJobActor.CheckIfReadyResponses;
@@ -44,7 +44,6 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -73,7 +72,7 @@ public class StartingJobActorTest {
     private ActorSelection thirdStage;
 
     @Mock
-    private Scheduler scheduler;
+    private SchedulerService scheduler;
 
     @Captor
     private ArgumentCaptor<Producer> producerCaptor;

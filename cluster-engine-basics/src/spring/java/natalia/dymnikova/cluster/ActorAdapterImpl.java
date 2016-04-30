@@ -25,18 +25,25 @@ import akka.actor.Status;
 import akka.actor.SupervisorStrategy;
 import akka.pattern.Patterns;
 import akka.util.Timeout;
+import natalia.dymnikova.cluster.util.ScalaToJava;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.Option;
 import scala.PartialFunction;
 import scala.concurrent.Future;
 import scala.runtime.BoxedUnit;
 
 import java.io.Serializable;
+import java.util.Optional;
 import java.util.function.Supplier;
+
+import static scala.collection.JavaConversions.asJavaIterable;
 
 /**
  * 
  */
 public class ActorAdapterImpl extends AbstractActor implements ActorAdapter {
+    private static final Logger log = LoggerFactory.getLogger(ActorAdapterImpl.class);
 
     private ActorLogic actorLogic;
 
@@ -51,11 +58,13 @@ public class ActorAdapterImpl extends AbstractActor implements ActorAdapter {
 
     @Override
     public void preStart() throws Exception {
+        log.debug("Starting {} at {}", actorLogic.getClass().getName(), context().self().path());
         actorLogic.preStart();
     }
 
     @Override
     public void postStop() throws Exception {
+        log.debug("Stopping {} at {}", actorLogic.getClass().getName(), context().self().path());
         actorLogic.postStop();
     }
 
@@ -80,8 +89,23 @@ public class ActorAdapterImpl extends AbstractActor implements ActorAdapter {
     }
 
     @Override
+    public void forward(ActorSelection selection, Object msg) {
+        selection.forward(msg, getContext());
+    }
+
+    @Override
     public ActorRef actorOf(final Props props) {
         return context().actorOf(props);
+    }
+
+    @Override
+    public Optional<ActorRef> child(final String name) {
+        return ScalaToJava.toJava(context().child(name));
+    }
+
+    @Override
+    public Iterable<ActorRef> children() {
+        return asJavaIterable(context().children());
     }
 
     @Override
@@ -95,8 +119,8 @@ public class ActorAdapterImpl extends AbstractActor implements ActorAdapter {
     }
 
     @Override
-    public Scheduler scheduler() {
-        return new SchedulerImpl(
+    public SchedulerService scheduler() {
+        return new SchedulerServiceImpl(
                 context().system(), context().system().scheduler()
         );
     }
@@ -126,8 +150,8 @@ public class ActorAdapterImpl extends AbstractActor implements ActorAdapter {
     }
 
     @Override
-    public void watch(final ActorRef actorRef) {
-        context().watch(actorRef);
+    public ActorRef watch(final ActorRef actorRef) {
+        return context().watch(actorRef);
     }
 
     @Override

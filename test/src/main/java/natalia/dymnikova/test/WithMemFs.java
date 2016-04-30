@@ -42,7 +42,9 @@ public class WithMemFs implements TestRule {
         return new Statement() {
             @Override
             public void evaluate() throws Throwable {
-                fs = Jimfs.newFileSystem(Configuration.unix());
+                fs = Jimfs.newFileSystem(Configuration.unix().toBuilder()
+                        .setAttributeViews("basic", "user")
+                        .build());
 
                 try {
                     base.evaluate();
@@ -73,5 +75,9 @@ public class WithMemFs implements TestRule {
 
     public boolean isDirectory(final Path path) {
         return Files.isDirectory(fs.getPath(path.toString()));
+    }
+
+    public Path root() {
+        return fs.getRootDirectories().iterator().next();
     }
 }

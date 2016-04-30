@@ -1,0 +1,5 @@
+dependencies {
+    compile libraries.akka,
+            project(":common")
+
+}

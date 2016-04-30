@@ -16,7 +16,11 @@
 
 package natalia.dymnikova.cluster;
 
-import akka.actor.*;
+import akka.actor.ActorPath;
+import akka.actor.ActorRef;
+import akka.actor.ActorSelection;
+import akka.actor.ActorSystem;
+import akka.actor.Props;
 import akka.util.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -56,8 +60,8 @@ public class ActorSystemAdapterImpl implements ActorSystemAdapter {
     }
 
     @Override
-    public Scheduler scheduler() {
-        return new SchedulerImpl(
+    public SchedulerService scheduler() {
+        return new SchedulerServiceImpl(
                 actorSystem, actorSystem.scheduler()
         );
     }

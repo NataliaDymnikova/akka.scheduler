@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,7 +36,7 @@ import java.util.concurrent.TimeUnit;
 import static com.google.common.util.concurrent.MoreExecutors.listeningDecorator;
 
 /**
- * 
+ *
  */
 @Configuration
 public class ThreadPoolBeans {
@@ -66,17 +67,17 @@ public class ThreadPoolBeans {
 
     public ExecutorService firstPriorityTasksExecutor0() {
         final ThreadFactory factory = new ThreadFactoryBuilder()
-            .setNameFormat("first-priority-%03d")
-            .setDaemon(true)
-            .build();
+                .setNameFormat("first-priority-%03d")
+                .setDaemon(true)
+                .build();
 
         final ExecutorService executor = new ThreadPoolExecutor(
-            0,
-            Integer.MAX_VALUE,
-            60L,
-            TimeUnit.SECONDS,
-            new SynchronousQueue<>(),
-            factory
+                0,
+                Integer.MAX_VALUE,
+                60L,
+                TimeUnit.SECONDS,
+                new SynchronousQueue<>(),
+                factory
         );
 
         log.debug("Constructed first priority tasks executor {}", executor);
@@ -88,6 +89,7 @@ public class ThreadPoolBeans {
      * <p>
      * It is advised to use leased threads for a short period of time.
      */
+    @Lazy
     @Bean
     public ListeningExecutorService firstPriorityTasksExecutor() {
         return listeningDecorator(firstPriorityTasksExecutor0());
@@ -99,11 +101,13 @@ public class ThreadPoolBeans {
      * <p>
      * Threads can be leased for a long period of time.
      */
+    @Lazy
     @Bean
     public ListeningExecutorService commonPurposeExecutor() {
         return listeningDecorator(commonPurposeExecutor0());
     }
 
+    @Lazy
     @Bean
     public ListeningScheduledExecutorService commonPurposeScheduler() {
         return listeningDecorator(commonPurposeScheduler0());
@@ -114,6 +118,7 @@ public class ThreadPoolBeans {
      * <p>
      * Threads can be leased for a long period of time.
      */
+    @Lazy
     @Bean
     public ListeningExecutorService backgroundTasksExecutor() {
         return listeningDecorator(backgroundTasksExecutor0());
@@ -121,17 +126,17 @@ public class ThreadPoolBeans {
 
     public ExecutorService backgroundTasksExecutor0() {
         final ThreadFactory factory = new ThreadFactoryBuilder()
-            .setNameFormat("background-%03d")
-            .setDaemon(true)
-            .build();
+                .setNameFormat("background-%03d")
+                .setDaemon(true)
+                .build();
 
         final ExecutorService executor = new ThreadPoolExecutor(
-            0,
-            Integer.MAX_VALUE,
-            60L,
-            TimeUnit.SECONDS,
-            new SynchronousQueue<>(),
-            factory
+                0,
+                Integer.MAX_VALUE,
+                60L,
+                TimeUnit.SECONDS,
+                new SynchronousQueue<>(),
+                factory
         );
 
         log.debug("Constructed background tasks executor {}", executor);

@@ -25,8 +25,8 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
 import java.io.Serializable;
+import java.util.Optional;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 import static natalia.dymnikova.util.MoreByteStrings.wrap;
 import static org.springframework.beans.factory.config.BeanDefinition.SCOPE_PROTOTYPE;
@@ -41,13 +41,13 @@ public class OutSubscriberFactory {
     @Autowired
     private Codec codec;
 
-    private final BiConsumer<Pair<ActorSelection, ActorRef>, ActorRef> onCompleted;
+    private final BiConsumer<Pair<Optional<ActorSelection>, ActorRef>, ActorRef> onCompleted;
 
-    public OutSubscriberFactory(final BiConsumer<Pair<ActorSelection, ActorRef>, ActorRef> onCompleted) {
+    public OutSubscriberFactory(final BiConsumer<Pair<Optional<ActorSelection>, ActorRef>, ActorRef> onCompleted) {
         this.onCompleted = onCompleted;
     }
 
-    public SubscriberWithMore getOutSubscriber(final ActorSelection nextActor,
+    public SubscriberWithMore getOutSubscriber(final Optional<ActorSelection> nextActor,
                                                final ActorRef parent,
                                                final ActorRef self,
                                                final long onStartCount) {
@@ -69,7 +69,7 @@ public class OutSubscriberFactory {
 
             @Override
             public void onNext(final Serializable serializable) {
-                nextActor.tell(Flow.Data.newBuilder().setData(wrap(codec.packObject(serializable))).build(), self);
+                nextActor.ifPresent(actor -> actor.tell(Flow.Data.newBuilder().setData(wrap(codec.packObject(serializable))).build(), self));
             }
         };
     }
