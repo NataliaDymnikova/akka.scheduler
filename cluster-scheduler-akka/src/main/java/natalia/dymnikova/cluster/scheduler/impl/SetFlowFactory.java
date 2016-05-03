@@ -18,6 +18,7 @@ package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
 import natalia.dymnikova.cluster.scheduler.impl.AkkaBackedRemoteObservable.StageContainer;
+import natalia.dymnikova.cluster.scheduler.impl.find.optimal.Tree;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
@@ -30,7 +31,6 @@ import static java.util.stream.Collectors.toList;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.SetFlow;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.Stage;
 import static natalia.dymnikova.cluster.scheduler.akka.Flow.StageType.Merge;
-import static natalia.dymnikova.util.MoreFutures.getUncheckedNow;
 
 /**
  *
@@ -54,17 +54,26 @@ public class SetFlowFactory {
         parentFlowName.ifPresent(flow::setParentFlowName);
 
         final List<Optional<Address>> addresses = strategy.getNodes(
-                resolvedStages.stream()
-                        .map(stageContainer -> stageContainer.candidates.stream()
-                                .filter(Optional::isPresent)
-                                .map(Optional::get)
-                                .collect(toList()))
-                        .collect(toList())
+                createTree(resolvedStages.get(0))
         );
 
 
         flow.setStage(makeStages(resolvedStages, addresses, 0));
         return flow.build();
+    }
+
+    private Tree<List<Address>> createTree(final StageContainer resolvedStages) {
+
+        return new Tree<>(
+                resolvedStages.candidates.stream()
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .collect(toList()),
+                resolvedStages.previous.stream()
+                    .map(this::createTree)
+                    .collect(toList())
+
+        );
     }
 
     private Stage makeStages(final List<StageContainer> resolvedStages,

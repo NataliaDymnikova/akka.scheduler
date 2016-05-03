@@ -17,6 +17,7 @@ import scala.concurrent.Future$;
 import java.util.*;
 import java.util.Map.Entry;
 
+import static java.util.Arrays.asList;
 import static java.util.Optional.of;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.contains;
@@ -57,11 +58,10 @@ public class FindOptimalAddressesStrategyTest {
 
     @Test
     public void shouldWorkForSimpleList() throws Exception {
-        final List<List<Address>> list = new ArrayList<>();
         final ArrayList<Address> addresses = new ArrayList<>();
         addresses.add(Address.apply("akka.tcp", "0"));
-        list.add(addresses);
-        list.add(addresses);
+        final Tree<List<Address>> list = new Tree<>(addresses, asList(new Tree<>(addresses)));
+
         final List<Optional<Address>> nodes = strategy.getNodes(list);
         assertThat(
                 nodes.stream().map(Optional::get).map(Address::toString).collect(toList()),

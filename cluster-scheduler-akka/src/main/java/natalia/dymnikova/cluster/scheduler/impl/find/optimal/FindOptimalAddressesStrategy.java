@@ -23,9 +23,6 @@ import java.util.concurrent.TimeoutException;
 
 import static akka.util.Timeout.apply;
 import static java.time.Duration.ofMinutes;
-import static java.util.Arrays.asList;
-import static java.util.Arrays.fill;
-import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
@@ -57,7 +54,7 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
     private Duration timeout = ofMinutes(5);
 
     @Override
-    public List<Optional<Address>> getNodes(List<List<Address>> versionsList) {
+    public List<Optional<Address>> getNodes(final Tree<List<Address>> versionsList) {
         final List<Address> addresses = versionsList.stream().flatMap(Collection::stream).collect(toList());
         final GetMemberState msg = GetMemberState.getDefaultInstance();
 
@@ -95,27 +92,26 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
         }
     }
 
-    private List<RouteWithValues> findBestWay(
-            final List<List<Address>> variants,
-            final List<RouteWithValues> routs
-    ) {
-        if (variants.size() == 1) {
-            if (variants.get(0).isEmpty()) {
+    private List<RouteWithValues> findBestWay(final Tree<List<Address>> variants,
+                                              final List<RouteWithValues> routs) {
+        if (variants.getChildren().isEmpty()) {
+            if (variants.getRoot().isEmpty()) {
                 return routs.stream().map(rout -> new RouteWithValues(rout, null)).collect(toList());
             } else {
-                return variants.get(0).stream()
+                return variants.getRoot().stream()
                         .flatMap(address -> routs.stream().map(rout -> new RouteWithValues(rout, address)))
                         .collect(toList());
             }
         }
 
-        final List<List<Address>> subList = variants.subList(1, variants.size());
-        final List<RouteWithValues> bestWay = findBestWay(subList, routs);
+        final List<Tree<List<Address>>> children = variants.getChildren();
+        final List<RouteWithValues> bestWay = new ArrayList<>();
+        children.forEach(child -> bestWay.addAll(findBestWay(child, routs)));
 
-        if (variants.get(0).isEmpty()) {
+        if (variants.getRoot().isEmpty()) {
             return bestWay.stream().map(rout -> new RouteWithValues(rout, null)).collect(toList());
         } else {
-            return variants.get(0).stream()
+            return variants.getRoot().stream()
                     .flatMap(address -> bestWay.stream().map(rout -> new RouteWithValues(rout, address)))
                     .collect(toList());
         }

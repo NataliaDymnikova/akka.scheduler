@@ -17,6 +17,7 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
+import natalia.dymnikova.cluster.scheduler.impl.find.optimal.Tree;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,5 +26,5 @@ import java.util.Optional;
  * TODO: come up with better name!!!
  */
 public interface GetAddressesStrategy {
-    List<Optional<Address>> getNodes(List<List<Address>> versionsList);
+    List<Optional<Address>> getNodes(final Tree<List<Address>> versionsList);
 }

@@ -17,6 +17,7 @@
 package natalia.dymnikova.cluster.scheduler.impl;
 
 import akka.actor.Address;
+import natalia.dymnikova.cluster.scheduler.impl.find.optimal.Tree;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
@@ -38,7 +39,7 @@ public class RoundRobinGetAddressesStrategy implements GetAddressesStrategy {
     private final Set<Address> nodes = new HashSet<>();
 
     @Override
-    public List<Optional<Address>> getNodes(final List<List<Address>> versionsList) {
+    public List<Optional<Address>> getNodes(final Tree<List<Address>> versionsList) {
         nodes.addAll(versionsList.stream().flatMap(Collection::stream).collect(toList()));
 
         final List<Optional<Address>> result = versionsList.stream()

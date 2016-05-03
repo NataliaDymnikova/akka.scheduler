@@ -21,6 +21,7 @@ package natalia.dymnikova.cluster.scheduler.impl;
  */
 
 import akka.actor.Address;
+import natalia.dymnikova.cluster.scheduler.impl.find.optimal.Tree;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
@@ -36,7 +37,7 @@ import static java.util.stream.Collectors.toList;
 @Component
 public class FindFirstGetAddressesStrategy implements GetAddressesStrategy {
     @Override
-    public List<Optional<Address>> getNodes(final List<List<Address>> versionsList) {
+    public List<Optional<Address>> getNodes(final Tree<List<Address>> versionsList) {
         return versionsList.stream().map(optionals -> optionals.stream().findFirst()).collect(toList());
     }
 }
