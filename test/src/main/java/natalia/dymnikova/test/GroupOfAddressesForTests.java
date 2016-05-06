@@ -3,6 +3,7 @@ package natalia.dymnikova.test;
 import akka.actor.Address;
 import natalia.dymnikova.cluster.scheduler.impl.find.optimal.GroupOfAddresses;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -15,13 +16,14 @@ import static java.lang.Math.abs;
  */
 @Lazy
 @Component
+@Primary
 public class GroupOfAddressesForTests implements GroupOfAddresses {
 
     public static final List<Group> groups = new ArrayList<>();
     static {
-        groups.add(new GroupForTest(new ArrayList<>(MockNetworkMap.addresses.subList(0, 5))));
-        groups.add(new GroupForTest(new ArrayList<>(MockNetworkMap.addresses.subList(5, 8))));
-        groups.add(new GroupForTest(new ArrayList<>(MockNetworkMap.addresses.subList(8, MockNetworkMap.n))));
+        groups.add(new Group(new ArrayList<>(MockNetworkMap.addresses.subList(0, 5))));
+        groups.add(new Group(new ArrayList<>(MockNetworkMap.addresses.subList(5, 8))));
+        groups.add(new Group(new ArrayList<>(MockNetworkMap.addresses.subList(8, MockNetworkMap.n))));
     }
 
     @Override
@@ -37,7 +39,7 @@ public class GroupOfAddressesForTests implements GroupOfAddresses {
             }
         }
 
-        ((GroupForTest) groups.get(0)).addGroup(address);
+        groups.get(0).addGroup(address);
         return groups.get(0);
     }
 
@@ -46,26 +48,4 @@ public class GroupOfAddressesForTests implements GroupOfAddresses {
         return abs(groups.indexOf(group1) - groups.indexOf(group2)) * 100;
     }
 
-    @Override
-    public long getDistance(final Address address1, final Address address2) {
-        return getDistance(getGroup(address1), getGroup(address2));
-    }
-
-    private static class GroupForTest implements Group {
-
-        private List<Address> addresses;
-
-        public GroupForTest(final List<Address> addresses) {
-            this.addresses = addresses;
-        }
-
-        @Override
-        public List<Address> getAddress() {
-            return addresses;
-        }
-
-        public void addGroup(final Address address) {
-            addresses.add(address);
-        }
-    }
 }

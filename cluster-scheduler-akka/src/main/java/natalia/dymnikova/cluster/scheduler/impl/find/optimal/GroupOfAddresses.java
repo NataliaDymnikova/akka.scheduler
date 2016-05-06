@@ -27,13 +27,25 @@ public interface GroupOfAddresses {
     List<Group> getGroups();
     Group getGroup(final Address address);
     long getDistance(final Group group1, final Group group2);
-    long getDistance(final Address address1, final Address address2);
 
-    interface Group {
-        List<Address> getAddress();
+    class Group {
+        private List<Address> addresses;
 
-        default boolean contains(final Address address) {
+        public Group(final List<Address> addresses) {
+            this.addresses = addresses;
+        }
+
+        public List<Address> getAddress() {
+            return addresses;
+        }
+
+        public boolean contains(final Address address) {
             return getAddress().contains(address);
         }
+
+        public void addGroup(final Address address) {
+            addresses.add(address);
+        }
+
     }
 }
