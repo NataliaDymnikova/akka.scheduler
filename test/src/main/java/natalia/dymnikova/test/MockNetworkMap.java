@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 import static java.lang.Math.abs;
+import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
 
 /**
@@ -41,6 +42,12 @@ public class MockNetworkMap implements NetworkMap {
 
     @Override
     public Optional<Long> getValue(final Address from, final Address to) {
-        return ofNullable(map.getOrDefault(from, null)).map(m -> m.getOrDefault(to, null));
+        final Optional<Long> result = ofNullable(map.getOrDefault(from, null)).map(m -> m.getOrDefault(to, null));
+        if (result.isPresent()) {
+            return result;
+        } else {
+            return of(0L);
+        }
+
     }
 }

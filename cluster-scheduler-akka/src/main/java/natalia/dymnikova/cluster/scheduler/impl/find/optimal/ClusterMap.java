@@ -16,19 +16,13 @@ import static java.util.Optional.ofNullable;
 /**
  * Created by dyma on 03.05.16.
  */
-@Lazy
-@Component
 public class ClusterMap {
 
-    @Autowired
-    private NetworkMap networkMap;
+    private final NetworkMap networkMap;
 
     private Map<Address, Map<Address, Map<String, Long>>> map = new HashMap<>();
 
-    public ClusterMap() {
-    }
-
-    ClusterMap(final NetworkMap networkMap) {
+    public ClusterMap(final NetworkMap networkMap) {
         this.networkMap = networkMap;
     }
 

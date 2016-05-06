@@ -17,10 +17,8 @@
 package natalia.dymnikova.cluster.scheduler.impl.find.optimal;
 
 import akka.actor.Address;
-import natalia.dymnikova.cluster.ActorSystemAdapter;
 import natalia.dymnikova.cluster.scheduler.impl.GetAddressesStrategy;
-import natalia.dymnikova.configuration.ConfigValue;
-import natalia.dymnikova.monitoring.MonitoringClient;
+import natalia.dymnikova.cluster.scheduler.impl.find.optimal.GroupOfAddresses.Group;
 import natalia.dymnikova.monitoring.MonitoringClient.Snapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,15 +26,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.*;
-import java.util.stream.Stream;
 
-import static java.time.Duration.ofMinutes;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
-import static java.util.Optional.empty;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -51,23 +45,39 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
     private Comparator<List<Map<String, Long>>> comparator;
 
     @Autowired
-    private ClusterMap clusterMap;
-
-    @Autowired
     private MembersStates states;
 
-    @ConfigValue("natalia-dymnikova.scheduler.get-address-strategy.waiting-time")
-    private Duration timeout = ofMinutes(5);
+    @Autowired
+    private GroupOfAddresses groupOfAddresses;
+
+    @Autowired
+    private NetworkMap networkMap;
 
     @Override
     public List<Optional<Address>> getNodes(final Tree<List<Address>> versionsList) {
-        final List<Address> addresses = versionsList.stream().flatMap(Collection::stream).collect(toList());
-        final Map<Address, Snapshot> statesMap = new HashMap<>();
-        addresses.forEach(address -> statesMap.put(address, states.getState(address)));
+        final List<Address> addresses = versionsList.stream().flatMap(Collection::stream).distinct().collect(toList());
 
+        final Map<Address, Snapshot> statesMap = states.getStates(addresses);
+
+        final ClusterMap clusterMap = new ClusterMap(networkMap);
         clusterMap.setValuesForNodes(toMap(statesMap));
 
-        return findBestWay(versionsList, singletonList(new RouteWithValues(clusterMap))).stream()
+        final List<GroupsRouteWithValues> bestGroups = findBestGroups(
+                versionsList,
+                singletonList(new GroupsRouteWithValues(groupOfAddresses))
+        );
+
+        final GroupsRouteWithValues bestGroupRoute = bestGroups.stream()
+                .map(group -> new SimpleEntry<>(group, group.getValues().stream().mapToLong(v -> v.orElse(0L)).sum()))
+                .min((o1, o2) -> Long.compare(o1.getValue(), o2.getValue()))
+                .map(SimpleEntry::getKey).orElse(new GroupsRouteWithValues(groupOfAddresses));
+
+        final Tree<List<Address>> versions = createVersionsFromGroups(
+                versionsList,
+                bestGroupRoute.getGroups().stream().filter(Optional::isPresent).map(Optional::get).collect(toList())
+        );
+
+        return findAllWays(versions, singletonList(new RouteWithValues(clusterMap))).stream()
                 .min((o1, o2) -> comparator.compare(
                         o1.getValues().stream().filter(Optional::isPresent).map(Optional::get).collect(toList()),
                         o2.getValues().stream().filter(Optional::isPresent).map(Optional::get).collect(toList()))
@@ -75,7 +85,52 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
                 .orElse(emptyList());
     }
 
-    private List<RouteWithValues> findBestWay(final Tree<List<Address>> variants,
+    private Tree<List<Address>> createVersionsFromGroups(Tree<List<Address>> versionsList,
+                                                         List<Group> bestGroups) {
+        final List<Address> rootTree = versionsList.getRoot().stream()
+                .filter(a -> bestGroups.stream()
+                        .filter(g -> g.contains(a))
+                        .findAny().isPresent())
+                .collect(toList());
+
+        if (bestGroups.isEmpty()) {
+            return  new Tree<>(rootTree);
+        } else {
+            return new Tree<>(
+                    rootTree,
+                    versionsList.getChildren().stream()
+                            .map(l -> createVersionsFromGroups(l, bestGroups.subList(1, bestGroups.size())))
+                            .collect(toList())
+            );
+        }
+    }
+
+    private List<GroupsRouteWithValues> findBestGroups(Tree<List<Address>> variants,
+                                                       List<GroupsRouteWithValues> routs) {
+        if (variants.getChildren().isEmpty()) {
+            if (variants.getRoot().isEmpty()) {
+                return routs.stream().map(rout -> new GroupsRouteWithValues(rout, null)).collect(toList());
+            } else {
+                return variants.getRoot().stream()
+                        .flatMap(address -> routs.stream().map(rout -> new GroupsRouteWithValues(rout, address)))
+                        .collect(toList());
+            }
+        }
+
+        final List<Tree<List<Address>>> children = variants.getChildren();
+        final List<GroupsRouteWithValues> bestWay = new ArrayList<>();
+        children.forEach(child -> bestWay.addAll(findBestGroups(child, routs)));
+
+        if (variants.getRoot().isEmpty()) {
+            return bestWay.stream().map(rout -> new GroupsRouteWithValues(rout, null)).collect(toList());
+        } else {
+            return variants.getRoot().stream()
+                    .flatMap(address -> bestWay.stream().map(rout -> new GroupsRouteWithValues(address, rout)))
+                    .collect(toList());
+        }
+    }
+
+    private List<RouteWithValues> findAllWays(final Tree<List<Address>> variants,
                                               final List<RouteWithValues> routs) {
         if (variants.getChildren().isEmpty()) {
             if (variants.getRoot().isEmpty()) {
@@ -89,7 +144,7 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
 
         final List<Tree<List<Address>>> children = variants.getChildren();
         final List<RouteWithValues> bestWay = new ArrayList<>();
-        children.forEach(child -> bestWay.addAll(findBestWay(child, routs)));
+        children.forEach(child -> bestWay.addAll(findAllWays(child, routs)));
 
         if (variants.getRoot().isEmpty()) {
             return bestWay.stream().map(rout -> new RouteWithValues(rout, null)).collect(toList());

@@ -3,6 +3,8 @@ package natalia.dymnikova.cluster.scheduler.impl.find.optimal;
 import akka.actor.Address;
 import natalia.dymnikova.monitoring.MonitoringClient.Snapshot;
 import natalia.dymnikova.test.ComparatorForTests;
+import natalia.dymnikova.test.GroupOfAddressesForTests;
+import natalia.dymnikova.test.MemberStatesForTest;
 import natalia.dymnikova.test.MockNetworkMap;
 import org.junit.Before;
 import org.junit.Test;
@@ -35,21 +37,19 @@ public class FindOptimalAddressesStrategyTest {
     @Spy
     private Comparator<List<Map<String, Long>>> comparator = new ComparatorForTests();
 
-    @Mock
-    private MembersStates states;
+    @Spy
+    private MembersStates states = new MemberStatesForTest();
 
+    @Spy
     private NetworkMap networkMap = new MockNetworkMap();
 
     @Spy
-    private ClusterMap clusterMap = new ClusterMap(networkMap);
+    private GroupOfAddresses groupOfAddresses = new GroupOfAddressesForTests();
+
 
     @InjectMocks
     private FindOptimalAddressesStrategy strategy;
 
-    @Before
-    public void setUp() throws Exception {
-        doAnswer(invocation -> createSnapshot((Address) invocation.getArguments()[0])).when(states).getState(any());
-    }
 
     @Test
     public void shouldWorkForSimpleList() throws Exception {
@@ -91,6 +91,17 @@ public class FindOptimalAddressesStrategyTest {
         assertThat(
                 nodes.stream().map(Optional::get).collect(toList()),
                 contains(addresses.get(1), addresses.get(1), addresses.get(0))
+        );
+    }
+
+    @Test
+    public void should() throws Exception {
+        final Tree<List<Address>> list = new Tree<>(asList(Address.apply("other", "address")));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(Address.apply("other", "address"))
         );
     }
 
