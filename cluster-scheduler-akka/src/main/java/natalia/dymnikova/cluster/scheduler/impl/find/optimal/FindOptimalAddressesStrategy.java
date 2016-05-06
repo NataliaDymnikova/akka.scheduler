@@ -59,8 +59,7 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
 
         final Map<Address, Snapshot> statesMap = states.getStates(addresses);
 
-        final ClusterMap clusterMap = new ClusterMap(networkMap);
-        clusterMap.setValuesForNodes(toMap(statesMap));
+        final ClusterMap clusterMap = new ClusterMap(networkMap, toMap(statesMap));
 
         final List<GroupsRouteWithValues> bestGroups = findBestGroups(
                 versionsList,
@@ -85,8 +84,8 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
                 .orElse(emptyList());
     }
 
-    private Tree<List<Address>> createVersionsFromGroups(Tree<List<Address>> versionsList,
-                                                         List<Group> bestGroups) {
+    private Tree<List<Address>> createVersionsFromGroups(final Tree<List<Address>> versionsList,
+                                                         final List<Group> bestGroups) {
         final List<Address> rootTree = versionsList.getRoot().stream()
                 .filter(a -> bestGroups.stream()
                         .filter(g -> g.contains(a))
@@ -105,27 +104,35 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
         }
     }
 
-    private List<GroupsRouteWithValues> findBestGroups(Tree<List<Address>> variants,
-                                                       List<GroupsRouteWithValues> routs) {
+    private List<GroupsRouteWithValues> findBestGroups(final Tree<List<Address>> variants,
+                                                       final List<GroupsRouteWithValues> routs) {
         if (variants.getChildren().isEmpty()) {
             if (variants.getRoot().isEmpty()) {
-                return routs.stream().map(rout -> new GroupsRouteWithValues(rout, null)).collect(toList());
+                return routs;
             } else {
                 return variants.getRoot().stream()
-                        .flatMap(address -> routs.stream().map(rout -> new GroupsRouteWithValues(rout, address)))
+                        .map(groupOfAddresses::getGroup)
+                        .distinct()
+                        .flatMap(group -> routs.stream().map(rout -> new GroupsRouteWithValues(rout, group)))
                         .collect(toList());
             }
         }
 
         final List<Tree<List<Address>>> children = variants.getChildren();
-        final List<GroupsRouteWithValues> bestWay = new ArrayList<>();
-        children.forEach(child -> bestWay.addAll(findBestGroups(child, routs)));
+        final List<List<GroupsRouteWithValues>> bestWay = new ArrayList<>();
+        children.forEach(child -> bestWay.add(findBestGroups(child, routs)));
+        final List<List<GroupsRouteWithValues>> allChildrenCombines = allCombines(bestWay);
 
         if (variants.getRoot().isEmpty()) {
-            return bestWay.stream().map(rout -> new GroupsRouteWithValues(rout, null)).collect(toList());
+            return allChildrenCombines.stream().flatMap(rout -> rout.stream().map(GroupsRouteWithValues::new)).collect(toList());
         } else {
             return variants.getRoot().stream()
-                    .flatMap(address -> bestWay.stream().map(rout -> new GroupsRouteWithValues(address, rout)))
+                    .flatMap(address -> allChildrenCombines.stream().map(rout -> {
+                        final GroupsRouteWithValues routeWithValues = new GroupsRouteWithValues(rout.get(0).getGroupOfAddresses());
+                        routeWithValues.setNextPoint(groupOfAddresses.getGroup(address));
+                        rout.stream().forEach(routeWithValues::setNextRoute);
+                        return  routeWithValues;
+                    }))
                     .collect(toList());
         }
     }
@@ -134,7 +141,7 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
                                               final List<RouteWithValues> routs) {
         if (variants.getChildren().isEmpty()) {
             if (variants.getRoot().isEmpty()) {
-                return routs.stream().map(rout -> new RouteWithValues(rout, null)).collect(toList());
+                return routs;
             } else {
                 return variants.getRoot().stream()
                         .flatMap(address -> routs.stream().map(rout -> new RouteWithValues(rout, address)))
@@ -143,16 +150,47 @@ public class FindOptimalAddressesStrategy implements GetAddressesStrategy {
         }
 
         final List<Tree<List<Address>>> children = variants.getChildren();
-        final List<RouteWithValues> bestWay = new ArrayList<>();
-        children.forEach(child -> bestWay.addAll(findAllWays(child, routs)));
+        final List<List<RouteWithValues>> bestWay = new ArrayList<>();
+        children.forEach(child -> bestWay.add(findAllWays(child, routs)));
+        final List<List<RouteWithValues>> allChildrenCombines = allCombines(bestWay);
 
         if (variants.getRoot().isEmpty()) {
-            return bestWay.stream().map(rout -> new RouteWithValues(rout, null)).collect(toList());
+            return allChildrenCombines.stream().flatMap(rout -> rout.stream().map(r -> new RouteWithValues(r, null))).collect(toList());
         } else {
             return variants.getRoot().stream()
-                    .flatMap(address -> bestWay.stream().map(rout -> new RouteWithValues(address, rout)))
+                    .flatMap(address -> allChildrenCombines.stream().map(rout -> {
+                        final RouteWithValues routeWithValues = new RouteWithValues(rout.get(0).getClusterMap());
+                        routeWithValues.setNextPoint(address);
+                        rout.stream().forEach(routeWithValues::setNextRoute);
+                        return  routeWithValues;
+                    }))
                     .collect(toList());
         }
+    }
+
+    private <T> List<List<T>> allCombines(final List<List<T>> bestWay) {
+        return getAllCombines(bestWay, 0);
+    }
+
+    private<T> List<List<T>> getAllCombines(final List<List<T>> values, final int i) {
+        if (i == values.size()) {
+            final List<List<T>> list = new LinkedList<>();
+            list.add(emptyList());
+            return list;
+        }
+
+        final List<List<T>> result = new LinkedList<>();
+        final List<List<T>> previous = getAllCombines(values, i + 1);
+
+        values.get(i).forEach(value -> {
+            previous.forEach(combine -> {
+                final LinkedList<T> e = new LinkedList<>(combine);
+                e.add(0, value);
+                result.add(e);
+            });
+        });
+
+        return result;
     }
 
     private Map<Address, Map<String,Long>> toMap(final Map<Address, Snapshot> statesMap) {

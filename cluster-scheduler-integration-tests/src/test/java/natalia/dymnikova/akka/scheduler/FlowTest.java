@@ -33,7 +33,6 @@ import rx.Observable;
 import rx.Producer;
 import scala.collection.immutable.SortedSet;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;

@@ -22,7 +22,7 @@ public class MockNetworkMap implements NetworkMap {
     public static final List<Address> addresses = new ArrayList<>();
     static {
         for (int i = 0; i < n; i++) {
-            addresses.add(new Address("akka.tcp", "system", "host:" + i, 0));
+            addresses.add(new Address("akka.tcp", "system", "host:" + i, i));
         }
     }
 
@@ -34,7 +34,7 @@ public class MockNetworkMap implements NetworkMap {
         for (int i = 0; i < n; i++) {
             final Map<Address, Long> addr = new HashMap<>();
             for (int j = 0; j < n; j++) {
-                addr.put(addresses.get(j), abs(j - i) * 10L);
+                addr.put(addresses.get(j), abs((Integer) addresses.get(j).port().get() - (Integer) addresses.get(i).port().get()) * 10L);
             }
             map.put(addresses.get(i), addr);
         }

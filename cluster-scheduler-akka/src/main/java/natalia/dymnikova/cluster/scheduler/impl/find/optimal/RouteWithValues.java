@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 
-import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
 
@@ -44,7 +43,7 @@ public class RouteWithValues {
 
     public RouteWithValues(final RouteWithValues previous, final Address next) {
         this.clusterMap = previous.clusterMap;
-        route = previous.route;
+        route = new ArrayList<>(previous.route);
         setNextPoint(next);
     }
 
@@ -52,7 +51,7 @@ public class RouteWithValues {
         this.clusterMap = next.clusterMap;
         route = new ArrayList<>();
         setNextPoint(previous);
-        next.route.forEach(route::add);
+        setNextRoute(next);
     }
 
     public void setNextPoint(final Address address) {
@@ -71,5 +70,18 @@ public class RouteWithValues {
     }
     public List<Optional<Map<String, Long>>> getValues() {
         return route.stream().map(o -> o.map(Entry::getValue)).collect(toList());
+    }
+
+    public ClusterMap getClusterMap() {
+        return clusterMap;
+    }
+
+
+    public void setNextRoute(final RouteWithValues next) {
+        next.route.forEach(op -> {
+            if (op.isPresent()) {
+                setNextPoint(op.get().getKey());
+            }
+        });
     }
 }

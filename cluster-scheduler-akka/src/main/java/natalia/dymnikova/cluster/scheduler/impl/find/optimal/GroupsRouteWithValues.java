@@ -22,7 +22,6 @@ import natalia.dymnikova.cluster.scheduler.impl.find.optimal.GroupOfAddresses.Gr
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 
@@ -43,9 +42,7 @@ public class GroupsRouteWithValues {
     }
 
     public GroupsRouteWithValues(final GroupsRouteWithValues previous, final Address next) {
-        this.groupOfAddresses = previous.groupOfAddresses;
-        route = previous.route;
-        setNextPoint(groupOfAddresses.getGroup(next));
+        this(previous, previous.groupOfAddresses.getGroup(next));
     }
 
     public GroupsRouteWithValues(final Address previous, final GroupsRouteWithValues next) {
@@ -53,6 +50,17 @@ public class GroupsRouteWithValues {
         route = new ArrayList<>();
         setNextPoint(groupOfAddresses.getGroup(previous));
         next.route.forEach(route::add);
+    }
+
+    public GroupsRouteWithValues(final GroupsRouteWithValues previous, final Group next) {
+        this.groupOfAddresses = previous.groupOfAddresses;
+        route = new ArrayList<>(previous.route);
+        setNextPoint(next);
+    }
+
+    public GroupsRouteWithValues(final GroupsRouteWithValues route) {
+        this(route.groupOfAddresses);
+        this.route.addAll(route.route);
     }
 
     public void setNextPoint(final Group group) {
@@ -71,5 +79,16 @@ public class GroupsRouteWithValues {
     }
     public List<Optional<Long>> getValues() {
         return route.stream().map(o -> o.map(Entry::getValue)).collect(toList());
+    }
+    public GroupOfAddresses getGroupOfAddresses() {
+        return groupOfAddresses;
+    }
+
+    public void setNextRoute(final GroupsRouteWithValues next) {
+        next.route.forEach(op -> {
+            if (op.isPresent()) {
+                setNextPoint(op.get().getKey());
+            }
+        });
     }
 }

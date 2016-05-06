@@ -6,11 +6,9 @@ import natalia.dymnikova.test.ComparatorForTests;
 import natalia.dymnikova.test.GroupOfAddressesForTests;
 import natalia.dymnikova.test.MemberStatesForTest;
 import natalia.dymnikova.test.MockNetworkMap;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
-import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 import scala.concurrent.Future$;
@@ -21,12 +19,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import static java.util.Arrays.asList;
-import static java.util.Optional.of;
+import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.contains;
 import static org.junit.Assert.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
 
 /**
  * Created by dyma on 01.05.16.
@@ -95,13 +91,73 @@ public class FindOptimalAddressesStrategyTest {
     }
 
     @Test
-    public void should() throws Exception {
+    public void shouldWorkWithAddressNotInStorage() throws Exception {
         final Tree<List<Address>> list = new Tree<>(asList(Address.apply("other", "address")));
 
         final List<Optional<Address>> nodes = strategy.getNodes(list);
         assertThat(
                 nodes.stream().map(Optional::get).collect(toList()),
                 contains(Address.apply("other", "address"))
+        );
+    }
+
+    @Test
+    public void shouldNotReturnAddressFromDifferentGroupsIfHasInOneGroup() throws Exception {
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(0,2), asList(
+                new Tree<>(addresses.subList(0, 10))
+        ));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(0), addresses.get(0))
+        );
+    }
+
+    @Test
+    public void shouldReturnAddressFromDifferentGroups() throws Exception {
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(0,2), asList(
+                new Tree<>(addresses.subList(5, 10))
+        ));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(1), addresses.get(5))
+        );
+    }
+
+    @Test
+    public void shouldWorkCorrect() throws Exception {
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(3,5), asList(
+                new Tree<>(addresses.subList(0, 1)),
+                new Tree<>(addresses.subList(2, 3)),
+                new Tree<>(addresses.subList(5, 10))
+        ));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(3), addresses.get(0), addresses.get(2), addresses.get(5))
+        );
+    }
+
+    @Test
+    public void shouldWorkCorrectInDifficultTreeOfAddresses() throws Exception {
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(3,5), asList(
+                new Tree<>(addresses.subList(0, 1), singletonList(new Tree<>(addresses.subList(0, 1)))),
+                new Tree<>(addresses.subList(2, 3)),
+                new Tree<>(addresses.subList(4, 10), singletonList(new Tree<>(addresses.subList(9, 10))))
+        ));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(3), addresses.get(0), addresses.get(0), addresses.get(2), addresses.get(4), addresses.get(9))
         );
     }
 
