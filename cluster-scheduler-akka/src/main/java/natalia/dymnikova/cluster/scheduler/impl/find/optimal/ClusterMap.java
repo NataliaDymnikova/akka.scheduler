@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 
 import static java.util.Optional.ofNullable;
@@ -24,16 +25,18 @@ public class ClusterMap {
 
     private Map<Address, Map<Address, Map<String, Long>>> map = new HashMap<>();
 
+    public ClusterMap() {
+    }
+
     ClusterMap(final NetworkMap networkMap) {
         this.networkMap = networkMap;
     }
 
-    public void setValuesForNodes(final List<Optional<Map.Entry<Address, Map<String, Long>>>> values) {
+    public void setValuesForNodes(final Map<Address, Map<String, Long>> values) {
 
-        values.stream().filter(Optional::isPresent).map(Optional::get).forEach(entry -> {
+        values.entrySet().forEach(entry -> {
             final HashMap<Address, Map<String, Long>> value = new HashMap<>();
-            values.stream().filter(Optional::isPresent)
-                    .map(Optional::get)
+            values.entrySet()
                     .forEach(entry2 -> value.put(entry2.getKey(), entry2.getValue()));
             map.put(entry.getKey(), value);
         });

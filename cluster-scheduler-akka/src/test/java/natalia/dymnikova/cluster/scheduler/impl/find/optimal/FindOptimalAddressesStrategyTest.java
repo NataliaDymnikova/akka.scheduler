@@ -1,10 +1,9 @@
 package natalia.dymnikova.cluster.scheduler.impl.find.optimal;
 
-import akka.actor.ActorSelection;
 import akka.actor.Address;
-import natalia.dymnikova.cluster.ActorSystemAdapter;
-import natalia.dymnikova.cluster.scheduler.akka.Flow.MemberState.MembersStates;
-import natalia.dymnikova.cluster.scheduler.akka.Flow.MemberState.State;
+import natalia.dymnikova.monitoring.MonitoringClient.Snapshot;
+import natalia.dymnikova.test.ComparatorForTests;
+import natalia.dymnikova.test.MockNetworkMap;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -14,8 +13,10 @@ import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 import scala.concurrent.Future$;
 
-import java.util.*;
-import java.util.Map.Entry;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static java.util.Arrays.asList;
 import static java.util.Optional.of;
@@ -23,8 +24,7 @@ import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.contains;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 /**
  * Created by dyma on 01.05.16.
@@ -33,12 +33,12 @@ import static org.mockito.Mockito.mock;
 public class FindOptimalAddressesStrategyTest {
 
     @Spy
-    private Comparator<List<Map<String, Long>>> comparator = new TestComparator();
+    private Comparator<List<Map<String, Long>>> comparator = new ComparatorForTests();
 
     @Mock
-    private ActorSystemAdapter adapter;
+    private MembersStates states;
 
-    private NetworkMap networkMap = mock(NetworkMap.class);
+    private NetworkMap networkMap = new MockNetworkMap();
 
     @Spy
     private ClusterMap clusterMap = new ClusterMap(networkMap);
@@ -48,39 +48,59 @@ public class FindOptimalAddressesStrategyTest {
 
     @Before
     public void setUp() throws Exception {
-        doReturn(of(13L)).when(networkMap).getValue(any(), any());
-        doReturn(future(MembersStates.newBuilder()
-                .addState(State.newBuilder().setName("name").setValue(11L))
-                .build())
-        ).when(adapter).ask(any(ActorSelection.class), any(), any());
-
+        doAnswer(invocation -> createSnapshot((Address) invocation.getArguments()[0])).when(states).getState(any());
     }
 
     @Test
     public void shouldWorkForSimpleList() throws Exception {
-        final ArrayList<Address> addresses = new ArrayList<>();
-        addresses.add(Address.apply("akka.tcp", "0"));
-        final Tree<List<Address>> list = new Tree<>(addresses, asList(new Tree<>(addresses)));
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(0,1), asList(
+                new Tree<>(addresses.subList(1, 2))
+        ));
 
         final List<Optional<Address>> nodes = strategy.getNodes(list);
         assertThat(
-                nodes.stream().map(Optional::get).map(Address::toString).collect(toList()),
-                contains("akka.tcp://0", "akka.tcp://0")
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(0), addresses.get(1))
         );
     }
 
+    @Test
+    public void shouldWorkWithSimpleChoice() throws Exception {
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(0,2), asList(
+                new Tree<>(addresses.subList(1, 2))
+        ));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(1), addresses.get(1))
+        );
+    }
+
+    @Test
+    public void shouldWorkWithTreeFlow() throws Exception {
+        final List<Address> addresses = MockNetworkMap.addresses;
+        final Tree<List<Address>> list = new Tree<>(addresses.subList(0,2), asList(
+                new Tree<>(addresses.subList(1, 2)),
+                new Tree<>(addresses.subList(0, 1))
+        ));
+
+        final List<Optional<Address>> nodes = strategy.getNodes(list);
+        assertThat(
+                nodes.stream().map(Optional::get).collect(toList()),
+                contains(addresses.get(1), addresses.get(1), addresses.get(0))
+        );
+    }
 
     public scala.concurrent.Future<Object> future(Object result) {
         return Future$.MODULE$.successful(result);
     }
 
-    private class TestComparator implements Comparator<List<Map<String, Long>>> {
-        @Override
-        public int compare(final List<Map<String, Long>> o1, final List<Map<String, Long>> o2) {
-            return Long.compare(
-                    o1.get(0).entrySet().stream().map(Entry::getValue).mapToLong(l->l).sum(),
-                    o2.get(0).entrySet().stream().map(Entry::getValue).mapToLong(l->l).sum()
-            );
-        }
+
+    private Snapshot createSnapshot(final Address address) {
+        return Snapshot.newBuilder().build();
     }
+
 }

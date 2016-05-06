@@ -16,6 +16,7 @@
 
 package natalia.dymnikova.cluster.scheduler.impl;
 
+import natalia.dymnikova.cluster.scheduler.impl.find.optimal.FindOptimalAddressesStrategy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
@@ -32,6 +33,6 @@ public class GetAddressStrategyFactory {
 
     public GetAddressesStrategy getAddressStrategy() {
         //TODO
-        return ctx.getAutowireCapableBeanFactory().getBean(RoundRobinGetAddressesStrategy.class);
+        return ctx.getAutowireCapableBeanFactory().getBean(FindOptimalAddressesStrategy.class);
     }
 }

@@ -3,5 +3,6 @@ dependencies {
     compile libraries.junit
     compile libraries.jimfs
     compile libraries.akka
-    compile project(":common")
+    compile project(":common"),
+            project(":cluster-scheduler-akka")
 }
